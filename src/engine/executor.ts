@@ -9,7 +9,7 @@ export class Executor {
     const rootOperator = this.buildOperatorTree(plan);
     const results: any[] = [];
     let row;
-    while ((row = await rootOperator.next())) {
+    while (row = await rootOperator.next()) {
       results.push(row);
     }
     return results;

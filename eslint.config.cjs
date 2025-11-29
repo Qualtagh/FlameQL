@@ -17,6 +17,13 @@ module.exports = [
     },
     rules: {
       '@typescript-eslint/no-deprecated': 'error',
+      'no-extra-parens': ['error', 'all', {
+        "conditionalAssign": true,
+        "ternaryOperandBinaryExpressions": true,
+        "nestedBinaryExpressions": true,
+        "ignoreJSX": "all",
+        "enforceForSequenceExpressions": true
+      }],
       'comma-dangle': ['error', {
         arrays: 'always-multiline',
         objects: 'always-multiline',

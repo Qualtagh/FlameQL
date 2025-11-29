@@ -19,10 +19,10 @@ export class NestedLoopJoin implements Operator {
       // Naive implementation: Load everything into memory
       // TODO: Implement streaming / chunking
       let row;
-      while ((row = await this.leftSource.next())) {
+      while (row = await this.leftSource.next()) {
         this.leftBuffer.push(row);
       }
-      while ((row = await this.rightSource.next())) {
+      while (row = await this.rightSource.next()) {
         this.rightBuffer.push(row);
       }
       this.initialized = true;
@@ -41,7 +41,7 @@ export class NestedLoopJoin implements Operator {
         // Check join condition
         // For now, support function-based condition (for testing) or assume true if null
         let match = true;
-        if (this.node.on && typeof this.node.on === 'function') {
+        if (typeof this.node.on === 'function') {
           match = this.node.on(leftRow, rightRow);
         }
 

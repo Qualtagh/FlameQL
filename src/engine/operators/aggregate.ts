@@ -14,7 +14,7 @@ export class Aggregate implements Operator {
   async next(): Promise<any | null> {
     if (!this.initialized) {
       let row;
-      while ((row = await this.source.next())) {
+      while (row = await this.source.next()) {
         const key = this.getGroupKey(row);
         if (!this.groups.has(key)) {
           this.groups.set(key, { key, count: 0, ...row }); // TODO: Initialize aggregates correctly

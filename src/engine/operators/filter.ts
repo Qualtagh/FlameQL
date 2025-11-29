@@ -9,7 +9,7 @@ export class Filter implements Operator {
 
   async next(): Promise<any | null> {
     let row;
-    while ((row = await this.source.next())) {
+    while (row = await this.source.next()) {
       // TODO: Evaluate predicate
       // For now, assume predicate is true or implement simple check
       if (this.evaluatePredicate(this.node.predicate, row)) {
