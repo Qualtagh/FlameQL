@@ -17,6 +17,13 @@ module.exports = [
     },
     rules: {
       '@typescript-eslint/no-deprecated': 'error',
+      'comma-dangle': ['error', {
+        arrays: 'always-multiline',
+        objects: 'always-multiline',
+        imports: 'always-multiline',
+        exports: 'always-multiline',
+        functions: 'never'
+      }],
       quotes: ['error', 'single', { avoidEscape: true, allowTemplateLiterals: true }],
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 1, maxBOF: 0 }],
       'no-trailing-spaces': 'error',
