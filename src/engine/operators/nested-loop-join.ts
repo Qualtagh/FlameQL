@@ -1,59 +1,66 @@
 import { JoinNode } from '../ast';
 import { Operator } from './operator';
 
-export class NestedLoopJoin implements Operator {
-  private leftBuffer: any[] = [];
+/**
+ * NestedLoopJoinOperator
+ *
+ * Loads the RIGHT collection into an in-memory buffer.
+ * Streams the LEFT collection and iterates through the buffer for each row.
+ *
+ * Complexity: O(N * M)
+ * Memory: O(M) - Right collection must fit in memory.
+ * Requirement: None (supports any condition).
+ */
+export class NestedLoopJoinOperator implements Operator {
   private rightBuffer: any[] = [];
-  private leftIndex = 0;
-  private rightIndex = 0;
   private initialized = false;
+  private currentLeftRow: any | null = null;
+  private rightIndex = 0;
+  private on: ((l: any, r: any) => boolean) | null;
 
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
-    private node: JoinNode
-  ) { }
+    node: JoinNode
+  ) {
+    if (typeof node.on === 'function') {
+      this.on = node.on;
+    } else {
+      this.on = null;
+    }
+  }
 
   async next(): Promise<any | null> {
     if (!this.initialized) {
-      // Naive implementation: Load everything into memory
-      // TODO: Implement streaming / chunking
+      // Load right source into memory
       let row;
-      while (row = await this.leftSource.next()) {
-        this.leftBuffer.push(row);
-      }
       while (row = await this.rightSource.next()) {
         this.rightBuffer.push(row);
       }
       this.initialized = true;
     }
 
-    while (this.leftIndex < this.leftBuffer.length) {
-      const leftRow = this.leftBuffer[this.leftIndex];
+    while (true) {
+      if (!this.currentLeftRow) {
+        this.currentLeftRow = await this.leftSource.next();
+        if (!this.currentLeftRow) return null;
+        this.rightIndex = 0;
+      }
 
       while (this.rightIndex < this.rightBuffer.length) {
-        const rightRow = this.rightBuffer[this.rightIndex];
-        this.rightIndex++;
+        const rightRow = this.rightBuffer[this.rightIndex++];
 
-        // Merge rows
-        const merged = { ...leftRow, ...rightRow };
-
-        // Check join condition
-        // For now, support function-based condition (for testing) or assume true if null
         let match = true;
-        if (typeof this.node.on === 'function') {
-          match = this.node.on(leftRow, rightRow);
+        if (this.on) {
+          match = this.on(this.currentLeftRow, rightRow);
         }
 
         if (match) {
-          return merged;
+          return { ...this.currentLeftRow, ...rightRow };
         }
       }
 
-      this.rightIndex = 0;
-      this.leftIndex++;
+      this.currentLeftRow = null;
     }
-
-    return null;
   }
 }

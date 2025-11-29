@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export enum JoinType {
   NestedLoop = 'NestedLoop',
+  IndexNestedLoop = 'IndexNestedLoop',
   Hash = 'Hash',
   Merge = 'Merge',
 }

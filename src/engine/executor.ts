@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
+import { JoinType } from '../api/hints';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
-import { Aggregate, Filter, FirestoreScan, NestedLoopJoin, Operator, Project } from './operators/operators';
+import { Aggregate, Filter, FirestoreScan, HashJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
 
 export class Executor {
   constructor(private db: admin.firestore.Firestore) { }
@@ -21,11 +22,24 @@ export class Executor {
         return new FirestoreScan(this.db, node as ScanNode);
       case NodeType.JOIN:
         const joinNode = node as JoinNode;
-        return new NestedLoopJoin(
-          this.buildOperatorTree(joinNode.left),
-          this.buildOperatorTree(joinNode.right),
-          joinNode
-        );
+        const left = this.buildOperatorTree(joinNode.left);
+        const right = this.buildOperatorTree(joinNode.right);
+
+        const isEquality = this.isEqualityJoin(joinNode.on);
+        const hint = joinNode.joinType;
+
+        if (hint === JoinType.Hash) {
+          return new HashJoinOperator(left, right, joinNode);
+        } else if (hint === JoinType.NestedLoop) {
+          return new NestedLoopJoinOperator(left, right, joinNode);
+        } else {
+          // Auto-selection
+          if (isEquality) {
+            return new HashJoinOperator(left, right, joinNode);
+          } else {
+            return new NestedLoopJoinOperator(left, right, joinNode);
+          }
+        }
       case NodeType.PROJECT:
         const projectNode = node as ProjectNode;
         return new Project(
@@ -47,5 +61,9 @@ export class Executor {
       default:
         throw new Error(`Unsupported node type: ${node.type}`);
     }
+  }
+
+  private isEqualityJoin(on: any): on is { left: string, right: string } {
+    return typeof on === 'object' && on !== null && 'left' in on && 'right' in on;
   }
 }
