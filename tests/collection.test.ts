@@ -10,7 +10,7 @@ test('collection parsing (table-driven)', () => {
   t(
     collection('jobs/{j.id}/shifts'),
     new Collection({
-      group: true,
+      group: undefined,
       path: [new Literal('jobs', LiteralType.String), new Field('j', ['id']), new Literal('shifts', LiteralType.String)],
     })
   );

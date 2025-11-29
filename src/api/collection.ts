@@ -5,7 +5,7 @@ import { Literal, LiteralType } from './literal';
 export interface CollectionPathSegment { }
 
 const collectionSchema = z.object({
-  group: z.boolean(),
+  group: z.boolean().optional(),
   path: z.array(z.unknown()),
 });
 
@@ -33,7 +33,7 @@ function parseSegment(seg: string): CollectionPathSegment {
 function makeCollection(pathStr: string, forceGroup: boolean): Collection {
   const rawSegments = pathStr.split('/').filter(s => s.length > 0);
   const nodes = rawSegments.map(parseSegment);
-  const group = forceGroup || rawSegments.length > 1;
+  const group = forceGroup ? true : rawSegments.length <= 1 ? false : undefined;
   return new Collection({ group, path: nodes });
 }
 
