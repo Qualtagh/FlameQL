@@ -1,0 +1,10 @@
+services:
+  firebase-emulators:
+    image: spine3/firebase-emulator
+    ports:
+      - "8080:8080"
+      - "4000:4000"
+      - "9099:9099"
+    environment:
+      - GCP_PROJECT=flameql-test
+    command: emulators:start --project flameql-test

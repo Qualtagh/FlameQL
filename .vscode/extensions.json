@@ -1,6 +1,8 @@
 {
   "recommendations": [
     "dbaeumer.vscode-eslint",
-    "firsttris.vscode-jest-runner"
+    "firsttris.vscode-jest-runner",
+    "ms-azuretools.vscode-containers",
+    "ms-azuretools.vscode-docker"
   ]
 }

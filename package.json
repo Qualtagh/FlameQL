@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.test.json --noEmit",
     "test": "jest",
     "lint": "eslint . --ext .ts"
   },
@@ -15,15 +16,16 @@
     "typescript"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "The Unlicense",
   "dependencies": {
+    "firebase-admin": "^13.6.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "eslint": "^9.39.1",
-    "@typescript-eslint/parser": "^8.47.0",
     "@typescript-eslint/eslint-plugin": "^8.47.0",
+    "@typescript-eslint/parser": "^8.47.0",
+    "eslint": "^9.39.1",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5",
     "typescript": "^5.9.3"
