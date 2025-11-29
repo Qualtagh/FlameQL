@@ -74,9 +74,9 @@ describe('Executor', () => {
     const results = await executor.execute(plan);
 
     expect(results).toStrictEqual([
-      { 'jobId': 'job1', 'jobTitle': 'Software Engineer', 'shiftDate': '2023-01-01' },
-      { 'jobId': 'job1', 'jobTitle': 'Software Engineer', 'shiftDate': '2023-01-02' },
-      { 'jobId': 'job2', 'jobTitle': 'Product Manager', 'shiftDate': '2023-01-03' },
+      { jobId: 'job1', jobTitle: 'Software Engineer', shiftDate: '2023-01-01' },
+      { jobId: 'job1', jobTitle: 'Software Engineer', shiftDate: '2023-01-02' },
+      { jobId: 'job2', jobTitle: 'Product Manager', shiftDate: '2023-01-03' },
     ]);
   });
 });
