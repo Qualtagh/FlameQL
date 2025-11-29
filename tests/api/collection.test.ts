@@ -1,6 +1,6 @@
-import { collection, Collection, collectionGroup } from '../src/api/collection';
-import { Field } from '../src/api/field';
-import { Literal, LiteralType } from '../src/api/literal';
+import { collection, Collection, collectionGroup } from '../../src/api/collection';
+import { Field } from '../../src/api/field';
+import { Literal, LiteralType } from '../../src/api/literal';
 
 test('collection parsing (table-driven)', () => {
   const t = (actual: Collection, expected: Collection) => expect(actual).toEqual(expected);

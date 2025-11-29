@@ -1,9 +1,9 @@
-import { collection } from '../src/api/collection';
-import { projection } from '../src/api/projection';
-import { JoinNode, ProjectNode } from '../src/engine/ast';
-import { Executor } from '../src/engine/executor';
-import { Planner } from '../src/engine/planner';
-import { clearDatabase, db } from './setup';
+import { collection } from '../../src/api/collection';
+import { projection } from '../../src/api/projection';
+import { JoinNode, ProjectNode } from '../../src/engine/ast';
+import { Executor } from '../../src/engine/executor';
+import { Planner } from '../../src/engine/planner';
+import { clearDatabase, db } from '../setup';
 
 describe('Executor', () => {
   beforeEach(async () => {

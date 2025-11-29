@@ -1,6 +1,6 @@
-import { collection, JoinType, projection } from '../src/api/api';
-import { JoinNode, NodeType, ProjectNode, ScanNode } from '../src/engine/ast';
-import { Planner } from '../src/engine/planner';
+import { collection, JoinType, projection } from '../../src/api/api';
+import { JoinNode, NodeType, ProjectNode, ScanNode } from '../../src/engine/ast';
+import { Planner } from '../../src/engine/planner';
 
 describe('Planner', () => {
   test('should plan a simple scan', () => {
