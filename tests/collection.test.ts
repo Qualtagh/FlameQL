@@ -3,10 +3,7 @@ import { Field } from '../src/api/field';
 import { Literal, LiteralType } from '../src/api/literal';
 
 test('collection parsing (table-driven)', () => {
-  const t = (actual: Collection, expected: Collection) => {
-    expect(actual).toEqual(expected);
-  };
-
+  const t = (actual: Collection, expected: Collection) => expect(actual).toEqual(expected);
   t(collection('jobs'), new Collection({ group: false, path: [new Literal('jobs', LiteralType.String)] }));
   t(collection('{jobId}'), new Collection({ group: false, path: [new Field('jobId', [])] }));
   t(collection('{j.id}'), new Collection({ group: false, path: [new Field('j', ['id'])] }));

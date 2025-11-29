@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryHintsSchema } from './hints';
 
 const projectionSchema = z.object({
   id: z.string(),
@@ -9,6 +10,7 @@ const projectionSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
   materializeTo: z.unknown().optional(),
   uniqueBy: z.unknown().optional(),
+  hints: queryHintsSchema.optional(),
 });
 
 type ProjectionInput = z.infer<typeof projectionSchema>;
