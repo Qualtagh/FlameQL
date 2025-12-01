@@ -7,7 +7,7 @@ describe('Planner', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs') },
-      select: { id: 'j.id' },
+      select: { id: 'j.#id' },
     });
 
     const planner = new Planner();
@@ -22,7 +22,7 @@ describe('Planner', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { id: 'j.id' },
+      select: { id: 'j.#id' },
     });
 
     const planner = new Planner();
@@ -37,7 +37,7 @@ describe('Planner', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { id: 'j.id' },
+      select: { id: 'j.#id' },
       hints: { joinType: JoinType.Hash },
     });
 

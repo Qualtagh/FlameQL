@@ -17,7 +17,7 @@ describe('Executor', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs') },
-      select: { id: 'j.id', title: 'j.title' },
+      select: { id: 'j.#id', title: 'j.title' },
     });
 
     const planner = new Planner();
@@ -61,7 +61,7 @@ describe('Executor', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { jobId: 'j.id', jobTitle: 'j.title', shiftDate: 's.date' },
+      select: { jobId: 'j.#id', jobTitle: 'j.title', shiftDate: 's.date' },
     });
 
     const planner = new Planner();
@@ -70,7 +70,7 @@ describe('Executor', () => {
     // Manually set join condition for now since Planner doesn't extract it yet
     const joinNode = plan.source as JoinNode;
     joinNode.condition = {
-      left: 'j.id',
+      left: 'j.#id',
       right: 's.jobId',
       operation: '==',
     };

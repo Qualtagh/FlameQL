@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.test.json --noEmit",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand --verbose",
     "lint": "eslint . --ext .ts,.cjs"
   },
   "keywords": [

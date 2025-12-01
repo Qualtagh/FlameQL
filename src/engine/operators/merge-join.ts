@@ -1,4 +1,5 @@
 import { JoinNode } from '../ast';
+import { getValueFromPath } from '../evaluator';
 import { Operator } from './operator';
 
 /**
@@ -95,15 +96,15 @@ export class MergeJoinOperator implements Operator {
     // Sort both buffers by their join fields
     this.leftBuffer.sort((a, b) =>
       this.compareValues(
-        this.getValue(a, this.leftField),
-        this.getValue(b, this.leftField)
+        getValueFromPath(a, this.leftField),
+        getValueFromPath(b, this.leftField)
       )
     );
 
     this.rightBuffer.sort((a, b) =>
       this.compareValues(
-        this.getValue(a, this.rightField),
-        this.getValue(b, this.rightField)
+        getValueFromPath(a, this.rightField),
+        getValueFromPath(b, this.rightField)
       )
     );
   }
@@ -117,12 +118,12 @@ export class MergeJoinOperator implements Operator {
       return false;
     }
 
-    const leftValue = this.getValue(this.leftBuffer[this.leftIndex], this.leftField);
+    const leftValue = getValueFromPath(this.leftBuffer[this.leftIndex], this.leftField);
 
     // Collect all left rows with this same value (handle duplicates)
     while (
       this.leftIndex < this.leftBuffer.length &&
-      this.compareValues(this.getValue(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
+      this.compareValues(getValueFromPath(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
     ) {
       this.currentLeftMatches.push(this.leftBuffer[this.leftIndex]);
       this.leftIndex++;
@@ -130,7 +131,7 @@ export class MergeJoinOperator implements Operator {
 
     // Update idxGe: find first right element >= leftValue
     while (this.idxGe < this.rightBuffer.length) {
-      const rightValue = this.getValue(this.rightBuffer[this.idxGe], this.rightField);
+      const rightValue = getValueFromPath(this.rightBuffer[this.idxGe], this.rightField);
       if (this.compareValues(rightValue, leftValue) >= 0) {
         break;
       }
@@ -143,7 +144,7 @@ export class MergeJoinOperator implements Operator {
       this.idxGt = this.idxGe;
     }
     while (this.idxGt < this.rightBuffer.length) {
-      const rightValue = this.getValue(this.rightBuffer[this.idxGt], this.rightField);
+      const rightValue = getValueFromPath(this.rightBuffer[this.idxGt], this.rightField);
       if (this.compareValues(rightValue, leftValue) > 0) {
         break;
       }
@@ -206,9 +207,5 @@ export class MergeJoinOperator implements Operator {
     if (a < b) return -1;
     if (a > b) return 1;
     return 0;
-  }
-
-  private getValue(obj: any, path: string): any {
-    return path.split('.').reduce((o, k) => (o || {})[k], obj);
   }
 }

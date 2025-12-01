@@ -1,4 +1,5 @@
 import { JoinNode } from '../ast';
+import { getValueFromPath } from '../evaluator';
 import { createOperationComparator } from '../utils/operation-comparator';
 import { Operator } from './operator';
 
@@ -51,8 +52,8 @@ export class NestedLoopJoinOperator implements Operator {
       while (this.rightIndex < this.rightBuffer.length) {
         const rightRow = this.rightBuffer[this.rightIndex++];
 
-        const leftValue = this.getValue(this.currentLeftRow, this.leftField);
-        const rightValue = this.getValue(rightRow, this.rightField);
+        const leftValue = getValueFromPath(this.currentLeftRow, this.leftField);
+        const rightValue = getValueFromPath(rightRow, this.rightField);
 
         if (this.comparator(leftValue, rightValue)) {
           return { ...this.currentLeftRow, ...rightRow };
@@ -61,9 +62,5 @@ export class NestedLoopJoinOperator implements Operator {
 
       this.currentLeftRow = null;
     }
-  }
-
-  private getValue(obj: any, path: string): any {
-    return path.split('.').reduce((o, k) => (o || {})[k], obj);
   }
 }

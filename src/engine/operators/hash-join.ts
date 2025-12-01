@@ -1,4 +1,5 @@
 import { JoinNode } from '../ast';
+import { getValueFromPath } from '../evaluator';
 import { isHashJoinCompatible } from '../utils/operation-comparator';
 import { Operator } from './operator';
 
@@ -53,7 +54,7 @@ export class HashJoinOperator implements Operator {
       this.currentLeftRow = await this.leftSource.next();
       if (!this.currentLeftRow) return null;
 
-      const leftValue = this.getValue(this.currentLeftRow, this.leftField);
+      const leftValue = getValueFromPath(this.currentLeftRow, this.leftField);
       this.currentMatches = this.findMatches(leftValue);
       this.matchIndex = 0;
     }
@@ -62,7 +63,7 @@ export class HashJoinOperator implements Operator {
   private async buildHashTable() {
     let row;
     while (row = await this.rightSource.next()) {
-      const val = this.getValue(row, this.rightField);
+      const val = getValueFromPath(row, this.rightField);
 
       if (val !== undefined && val !== null) {
         // For 'in' and 'array-contains-any', the right value is an array, and we index each element
@@ -120,9 +121,5 @@ export class HashJoinOperator implements Operator {
       default:
         return null;
     }
-  }
-
-  private getValue(obj: any, path: string): any {
-    return path.split('.').reduce((o, k) => (o || {})[k], obj);
   }
 }
