@@ -1,4 +1,5 @@
 import { JoinNode } from '../ast';
+import { isHashJoinCompatible } from '../utils/operation-comparator';
 import { Operator } from './operator';
 
 /**
@@ -9,7 +10,7 @@ import { Operator } from './operator';
  *
  * Complexity: O(N + M) where N is left size, M is right size.
  * Memory: O(M) - Right collection must fit in memory.
- * Requirement: Equality condition.
+ * Requirement: Hash-compatible operations (==, in, array-contains, array-contains-any).
  */
 export class HashJoinOperator implements Operator {
   private hashTable: Map<string, any[]> = new Map();
@@ -17,19 +18,24 @@ export class HashJoinOperator implements Operator {
   private currentLeftRow: any | null = null;
   private currentMatches: any[] | null = null;
   private matchIndex = 0;
-  private leftKey: string;
-  private rightKey: string;
+  private leftField: string;
+  private rightField: string;
+  private operation: string;
 
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
     node: JoinNode
   ) {
-    if (!this.isEqualityJoin(node.on)) {
-      throw new Error('HashJoin strategy requires an equality condition');
+    if (!isHashJoinCompatible(node.condition.operation)) {
+      throw new Error(
+        `HashJoin strategy requires hash-compatible operation (==, in, array-contains, array-contains-any), got: ${node.condition.operation}`
+      );
     }
-    this.leftKey = node.on.left;
-    this.rightKey = node.on.right;
+
+    this.operation = node.condition.operation;
+    this.leftField = node.condition.left;
+    this.rightField = node.condition.right;
   }
 
   async next(): Promise<any | null> {
@@ -47,41 +53,96 @@ export class HashJoinOperator implements Operator {
       this.currentLeftRow = await this.leftSource.next();
       if (!this.currentLeftRow) return null;
 
-      const val = this.getValue(this.currentLeftRow, this.leftKey);
-
-      if (val !== undefined && val !== null) {
-        const key = String(val);
-        if (this.hashTable.has(key)) {
-          this.currentMatches = this.hashTable.get(key)!;
-          this.matchIndex = 0;
-        } else {
-          this.currentMatches = null;
-        }
-      } else {
-        this.currentMatches = null;
-      }
+      const leftValue = this.getValue(this.currentLeftRow, this.leftField);
+      this.currentMatches = this.findMatches(leftValue);
+      this.matchIndex = 0;
     }
   }
 
   private async buildHashTable() {
     let row;
     while (row = await this.rightSource.next()) {
-      const val = this.getValue(row, this.rightKey);
+      const val = this.getValue(row, this.rightField);
+
       if (val !== undefined && val !== null) {
-        const key = String(val);
-        if (!this.hashTable.has(key)) {
-          this.hashTable.set(key, []);
+        // For array-contains-any, the right value is an array, and we index each element
+        if (this.operation === 'array-contains-any' && Array.isArray(val)) {
+          for (const element of val) {
+            const key = String(element);
+            if (!this.hashTable.has(key)) {
+              this.hashTable.set(key, []);
+            }
+            this.hashTable.get(key)!.push(row);
+          }
+        } else {
+          // For ==, array-contains, and in (if supported), index by the value itself
+          // Note: For 'array-contains', right side is a scalar value that we look up in left array
+          const key = String(val);
+          if (!this.hashTable.has(key)) {
+            this.hashTable.set(key, []);
+          }
+          this.hashTable.get(key)!.push(row);
         }
-        this.hashTable.get(key)!.push(row);
       }
+    }
+  }
+
+  private findMatches(leftValue: any): any[] | null {
+    if (leftValue === undefined || leftValue === null) {
+      return null;
+    }
+
+    switch (this.operation) {
+      case '==':
+        const key = String(leftValue);
+        return this.hashTable.get(key) || null;
+
+      case 'in':
+        // For 'in', the right value should be an array
+        // We need to check if leftValue is in any of the arrays in the hash table
+        // This is actually tricky with hash joins - we'd need to build the hash differently
+        // For now, let's keep it simple and assume the semantics are:
+        // leftValue IN rightArray, so we look up each element of rightValue
+        // Actually, this might not work well with hash join. Let's document this limitation.
+        throw new Error('Hash join with "in" operation needs special handling - not yet implemented');
+
+      case 'array-contains':
+        //  leftArray contains rightValue
+        // Hash table indexed by right values, look up leftValue
+        if (Array.isArray(leftValue)) {
+          const matches = new Set<any>();
+          for (const element of leftValue) {
+            const elementKey = String(element);
+            const elementMatches = this.hashTable.get(elementKey);
+            if (elementMatches) {
+              elementMatches.forEach(m => matches.add(m));
+            }
+          }
+          return matches.size > 0 ? Array.from(matches) : null;
+        }
+        return null;
+
+      case 'array-contains-any':
+        // Similar to array-contains but with different semantics
+        if (Array.isArray(leftValue)) {
+          const matches = new Set<any>();
+          for (const element of leftValue) {
+            const elementKey = String(element);
+            const elementMatches = this.hashTable.get(elementKey);
+            if (elementMatches) {
+              elementMatches.forEach(m => matches.add(m));
+            }
+          }
+          return matches.size > 0 ? Array.from(matches) : null;
+        }
+        return null;
+
+      default:
+        return null;
     }
   }
 
   private getValue(obj: any, path: string): any {
     return path.split('.').reduce((o, k) => (o || {})[k], obj);
-  }
-
-  private isEqualityJoin(on: any): on is { left: string, right: string } {
-    return typeof on === 'object' && on !== null && 'left' in on && 'right' in on;
   }
 }

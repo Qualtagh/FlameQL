@@ -1,4 +1,5 @@
 import { JoinNode } from '../ast';
+import { createOperationComparator } from '../utils/operation-comparator';
 import { Operator } from './operator';
 
 /**
@@ -9,25 +10,25 @@ import { Operator } from './operator';
  *
  * Complexity: O(N * M)
  * Memory: O(M) - Right collection must fit in memory.
- * Requirement: None (supports any condition).
+ * Requirement: None (supports any operation).
  */
 export class NestedLoopJoinOperator implements Operator {
   private rightBuffer: any[] = [];
   private initialized = false;
   private currentLeftRow: any | null = null;
   private rightIndex = 0;
-  private on: ((l: any, r: any) => boolean) | null;
+  private comparator: (a: any, b: any) => boolean;
+  private leftField: string;
+  private rightField: string;
 
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
     node: JoinNode
   ) {
-    if (typeof node.on === 'function') {
-      this.on = node.on;
-    } else {
-      this.on = null;
-    }
+    this.leftField = node.condition.left;
+    this.rightField = node.condition.right;
+    this.comparator = createOperationComparator(node.condition.operation);
   }
 
   async next(): Promise<any | null> {
@@ -50,17 +51,19 @@ export class NestedLoopJoinOperator implements Operator {
       while (this.rightIndex < this.rightBuffer.length) {
         const rightRow = this.rightBuffer[this.rightIndex++];
 
-        let match = true;
-        if (this.on) {
-          match = this.on(this.currentLeftRow, rightRow);
-        }
+        const leftValue = this.getValue(this.currentLeftRow, this.leftField);
+        const rightValue = this.getValue(rightRow, this.rightField);
 
-        if (match) {
+        if (this.comparator(leftValue, rightValue)) {
           return { ...this.currentLeftRow, ...rightRow };
         }
       }
 
       this.currentLeftRow = null;
     }
+  }
+
+  private getValue(obj: any, path: string): any {
+    return path.split('.').reduce((o, k) => (o || {})[k], obj);
   }
 }

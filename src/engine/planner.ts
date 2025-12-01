@@ -57,7 +57,12 @@ export class Planner {
         left: root,
         right: rightNode,
         joinType: joinType,
-        on: null,
+        // TODO: Extract join conditions from projection.where
+        condition: {
+          left: 'id',
+          right: 'id',
+          operation: '==',
+        },
       } as JoinNode;
     }
 

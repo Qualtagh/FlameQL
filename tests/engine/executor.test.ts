@@ -68,7 +68,12 @@ describe('Executor', () => {
     const plan = planner.plan(p) as ProjectNode;
 
     // Manually set join condition for now since Planner doesn't extract it yet
-    (plan.source as JoinNode).on = (left: any, right: any) => left['j'].id === right['s'].jobId;
+    const joinNode = plan.source as JoinNode;
+    joinNode.condition = {
+      left: 'j.id',
+      right: 's.jobId',
+      operation: '==',
+    };
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);

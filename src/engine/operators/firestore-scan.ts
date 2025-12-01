@@ -27,7 +27,7 @@ export class FirestoreScan implements Operator {
 
     if (this.index < this.snapshot!.docs.length) {
       const doc = this.snapshot!.docs[this.index++];
-      return { [this.node.alias]: { ...doc.data(), id: doc.id } };
+      return { [this.node.alias]: { id: doc.id, ...doc.data() } };
     }
 
     return null;

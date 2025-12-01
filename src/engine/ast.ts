@@ -44,13 +44,14 @@ export interface JoinNode extends ExecutionNode {
   left: ExecutionNode;
   right: ExecutionNode;
   joinType: JoinType;
-  on: JoinCondition;
+  condition: JoinCondition;
 }
 
-export type JoinCondition =
-  | ((l: any, r: any) => boolean)
-  | { left: string; right: string }
-  | null;
+export interface JoinCondition {
+  left: string;
+  right: string;
+  operation: WhereFilterOp;
+}
 
 export interface AggregateNode extends ExecutionNode {
   type: NodeType.AGGREGATE;

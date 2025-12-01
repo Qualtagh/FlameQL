@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import { JoinType } from '../api/hints';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
 import { Aggregate, Filter, FirestoreScan, HashJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
+import { isHashJoinCompatible } from './utils/operation-comparator';
 
 export class Executor {
   constructor(private db: admin.firestore.Firestore) { }
@@ -25,7 +26,7 @@ export class Executor {
         const left = this.buildOperatorTree(joinNode.left);
         const right = this.buildOperatorTree(joinNode.right);
 
-        const isEquality = this.isEqualityJoin(joinNode.on);
+        const canUseHash = isHashJoinCompatible(joinNode.condition.operation);
         const hint = joinNode.joinType;
 
         if (hint === JoinType.Hash) {
@@ -34,7 +35,7 @@ export class Executor {
           return new NestedLoopJoinOperator(left, right, joinNode);
         } else {
           // Auto-selection
-          if (isEquality) {
+          if (canUseHash) {
             return new HashJoinOperator(left, right, joinNode);
           } else {
             return new NestedLoopJoinOperator(left, right, joinNode);
@@ -63,7 +64,4 @@ export class Executor {
     }
   }
 
-  private isEqualityJoin(on: any): on is { left: string, right: string } {
-    return typeof on === 'object' && on !== null && 'left' in on && 'right' in on;
-  }
 }
