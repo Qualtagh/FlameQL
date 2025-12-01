@@ -65,8 +65,8 @@ export class HashJoinOperator implements Operator {
       const val = this.getValue(row, this.rightField);
 
       if (val !== undefined && val !== null) {
-        // For array-contains-any, the right value is an array, and we index each element
-        if (this.operation === 'array-contains-any' && Array.isArray(val)) {
+        // For 'in' and 'array-contains-any', the right value is an array, and we index each element
+        if ((this.operation === 'in' || this.operation === 'array-contains-any') && Array.isArray(val)) {
           for (const element of val) {
             const key = String(element);
             if (!this.hashTable.has(key)) {
@@ -75,7 +75,7 @@ export class HashJoinOperator implements Operator {
             this.hashTable.get(key)!.push(row);
           }
         } else {
-          // For ==, array-contains, and in (if supported), index by the value itself
+          // For == and array-contains, index by the value itself
           // Note: For 'array-contains', right side is a scalar value that we look up in left array
           const key = String(val);
           if (!this.hashTable.has(key)) {
@@ -94,36 +94,16 @@ export class HashJoinOperator implements Operator {
 
     switch (this.operation) {
       case '==':
+      case 'in':
+        // For 'in', leftValue is a scalar, rightValue is an array
+        // During buildHashTable, we indexed each element of the right array
+        // Now we simply look up the scalar leftValue in the hash table
         const key = String(leftValue);
         return this.hashTable.get(key) || null;
 
-      case 'in':
-        // For 'in', the right value should be an array
-        // We need to check if leftValue is in any of the arrays in the hash table
-        // This is actually tricky with hash joins - we'd need to build the hash differently
-        // For now, let's keep it simple and assume the semantics are:
-        // leftValue IN rightArray, so we look up each element of rightValue
-        // Actually, this might not work well with hash join. Let's document this limitation.
-        throw new Error('Hash join with "in" operation needs special handling - not yet implemented');
-
       case 'array-contains':
-        //  leftArray contains rightValue
-        // Hash table indexed by right values, look up leftValue
-        if (Array.isArray(leftValue)) {
-          const matches = new Set<any>();
-          for (const element of leftValue) {
-            const elementKey = String(element);
-            const elementMatches = this.hashTable.get(elementKey);
-            if (elementMatches) {
-              elementMatches.forEach(m => matches.add(m));
-            }
-          }
-          return matches.size > 0 ? Array.from(matches) : null;
-        }
-        return null;
-
       case 'array-contains-any':
-        // Similar to array-contains but with different semantics
+        // Hash table indexed by right values, look up leftValue
         if (Array.isArray(leftValue)) {
           const matches = new Set<any>();
           for (const element of leftValue) {

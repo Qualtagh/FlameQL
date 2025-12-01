@@ -119,4 +119,36 @@ describe('HashJoinOperator (Integration)', () => {
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ iTags: ['a', 'b'], fOptions: ['b', 'c'] });
   });
+
+  it('should support in with hash join', async () => {
+    await db.collection('things').doc('t1').set({ tag: 'a' });
+    await db.collection('things').doc('t2').set({ tag: 'b' });
+    await db.collection('things').doc('t3').set({ tag: 'x' });
+
+    await db.collection('filters2').doc('f1').set({ options: ['b', 'c'] });
+    await db.collection('filters2').doc('f2').set({ options: ['z'] });
+
+    const p = projection({
+      id: 'test',
+      from: { t: collection('things'), f: collection('filters2') },
+      select: { tTag: 't.tag', fOptions: 'f.options' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Hash;
+    joinNode.condition = {
+      left: 't.tag',
+      right: 'f.options',
+      operation: 'in',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({ tTag: 'b', fOptions: ['b', 'c'] });
+  });
 });
