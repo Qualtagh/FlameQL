@@ -7,9 +7,9 @@ import { Operator } from './operator';
  * Sorts both the LEFT and RIGHT collections by their join fields.
  * Uses a two-pointer algorithm to scan through both sorted collections in parallel.
  *
- * Complexity: O(N log N + M log M) for sorting, O(N + M) for merging.
+ * Complexity: O(N log N + M log M) for sorting, O(N + M) for merging with two pointers.
  * Memory: O(N + M) - Both collections must fit in memory.
- * Requirement: Equality operation (==) only.
+ * Requirement: Comparison operations (==, <, <=, >, >=).
  */
 export class MergeJoinOperator implements Operator {
   private leftBuffer: any[] = [];
@@ -23,18 +23,21 @@ export class MergeJoinOperator implements Operator {
   private matchRightIndex = 0;
   private leftField: string;
   private rightField: string;
+  private operation: string;
 
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
     node: JoinNode
   ) {
-    if (node.condition.operation !== '==') {
+    const supportedOps = ['==', '<', '<=', '>', '>='];
+    if (!supportedOps.includes(node.condition.operation)) {
       throw new Error(
-        `MergeJoin strategy requires equality operation (==), got: ${node.condition.operation}`
+        `MergeJoin strategy requires comparison operation (==, <, <=, >, >=), got: ${node.condition.operation}`
       );
     }
 
+    this.operation = node.condition.operation;
     this.leftField = node.condition.left;
     this.rightField = node.condition.right;
   }
@@ -100,55 +103,117 @@ export class MergeJoinOperator implements Operator {
     this.matchLeftIndex = 0;
     this.matchRightIndex = 0;
 
-    // Scan until we find matching values
-    while (this.leftIndex < this.leftBuffer.length && this.rightIndex < this.rightBuffer.length) {
-      const leftValue = this.getValue(this.leftBuffer[this.leftIndex], this.leftField);
-      const rightValue = this.getValue(this.rightBuffer[this.rightIndex], this.rightField);
-
-      const cmp = this.compareValues(leftValue, rightValue);
-
-      if (cmp < 0) {
-        // Left value is smaller, advance left pointer
-        this.leftIndex++;
-      } else if (cmp > 0) {
-        // Right value is smaller, advance right pointer
-        this.rightIndex++;
-      } else {
-        // Values match! Collect all rows with this value from both sides
-        const matchValue = leftValue;
-
-        // Collect all left rows with this value
-        let tempLeftIndex = this.leftIndex;
-        while (
-          tempLeftIndex < this.leftBuffer.length &&
-          this.compareValues(this.getValue(this.leftBuffer[tempLeftIndex], this.leftField), matchValue) === 0
-        ) {
-          this.currentLeftMatches.push(this.leftBuffer[tempLeftIndex]);
-          tempLeftIndex++;
-        }
-
-        // Collect all right rows with this value
-        let tempRightIndex = this.rightIndex;
-        while (
-          tempRightIndex < this.rightBuffer.length &&
-          this.compareValues(this.getValue(this.rightBuffer[tempRightIndex], this.rightField), matchValue) === 0
-        ) {
-          this.currentRightMatches.push(this.rightBuffer[tempRightIndex]);
-          tempRightIndex++;
-        }
-
-        // Advance indices past the matched groups
-        this.leftIndex = tempLeftIndex;
-        this.rightIndex = tempRightIndex;
-
-        // Return true if we found matches
-        if (this.currentLeftMatches.length > 0 && this.currentRightMatches.length > 0) {
-          return true;
-        }
-      }
+    // Check if we've exhausted the left collection
+    if (this.leftIndex >= this.leftBuffer.length) {
+      return false;
     }
 
-    return false;
+    const leftValue = this.getValue(this.leftBuffer[this.leftIndex], this.leftField);
+
+    // Collect all left rows with this same value (handle duplicates)
+    let tempLeftIndex = this.leftIndex;
+    while (
+      tempLeftIndex < this.leftBuffer.length &&
+      this.compareValues(this.getValue(this.leftBuffer[tempLeftIndex], this.leftField), leftValue) === 0
+    ) {
+      this.currentLeftMatches.push(this.leftBuffer[tempLeftIndex]);
+      tempLeftIndex++;
+    }
+
+    // Use two-pointer technique to find matching right rows based on operation
+    switch (this.operation) {
+      case '==':
+        // Advance right pointer until we find matching value or pass it
+        while (this.rightIndex < this.rightBuffer.length) {
+          const rightValue = this.getValue(this.rightBuffer[this.rightIndex], this.rightField);
+          const cmp = this.compareValues(leftValue, rightValue);
+
+          if (cmp < 0) {
+            // Left value is smaller, no matches for this left value
+            break;
+          } else if (cmp > 0) {
+            // Right value is smaller, advance right pointer
+            this.rightIndex++;
+          } else {
+            // Values match! Collect all right rows with this value
+            let tempRightIndex = this.rightIndex;
+            while (tempRightIndex < this.rightBuffer.length) {
+              const rightValue = this.getValue(this.rightBuffer[tempRightIndex], this.rightField);
+              if (this.compareValues(rightValue, leftValue) !== 0) break;
+              this.currentRightMatches.push(this.rightBuffer[tempRightIndex]);
+              tempRightIndex++;
+            }
+            this.rightIndex = tempRightIndex;
+            break;
+          }
+        }
+        break;
+
+      case '<':
+        // Left < Right: find first right value > leftValue, collect all from there to end
+        while (this.rightIndex < this.rightBuffer.length) {
+          const rightValue = this.getValue(this.rightBuffer[this.rightIndex], this.rightField);
+          if (this.compareValues(leftValue, rightValue) < 0) {
+            // Found first right > left, collect all remaining
+            for (let i = this.rightIndex; i < this.rightBuffer.length; i++) {
+              this.currentRightMatches.push(this.rightBuffer[i]);
+            }
+            break;
+          }
+          this.rightIndex++;
+        }
+        break;
+
+      case '<=':
+        // Left <= Right: find first right value >= leftValue, collect all from there to end
+        while (this.rightIndex < this.rightBuffer.length) {
+          const rightValue = this.getValue(this.rightBuffer[this.rightIndex], this.rightField);
+          if (this.compareValues(leftValue, rightValue) <= 0) {
+            // Found first right >= left, collect all remaining
+            for (let i = this.rightIndex; i < this.rightBuffer.length; i++) {
+              this.currentRightMatches.push(this.rightBuffer[i]);
+            }
+            break;
+          }
+          this.rightIndex++;
+        }
+        break;
+
+      case '>':
+        // Left > Right: collect all right values < leftValue
+        // Since we're scanning left in order, we collect from start up to first right >= leftValue
+        let tempRightIndex = 0;
+        while (tempRightIndex < this.rightBuffer.length) {
+          const rightValue = this.getValue(this.rightBuffer[tempRightIndex], this.rightField);
+          if (this.compareValues(leftValue, rightValue) > 0) {
+            this.currentRightMatches.push(this.rightBuffer[tempRightIndex]);
+            tempRightIndex++;
+          } else {
+            break;
+          }
+        }
+        break;
+
+      case '>=':
+        // Left >= Right: collect all right values <= leftValue
+        let tempRightIdx = 0;
+        while (tempRightIdx < this.rightBuffer.length) {
+          const rightValue = this.getValue(this.rightBuffer[tempRightIdx], this.rightField);
+          if (this.compareValues(leftValue, rightValue) >= 0) {
+            this.currentRightMatches.push(this.rightBuffer[tempRightIdx]);
+            tempRightIdx++;
+          } else {
+            break;
+          }
+        }
+        break;
+    }
+
+    // Advance left index past processed rows
+    this.leftIndex = tempLeftIndex;
+
+    // Return true if we found any matches
+    return this.currentLeftMatches.length > 0 && this.currentRightMatches.length > 0;
   }
 
   private compareValues(a: any, b: any): number {

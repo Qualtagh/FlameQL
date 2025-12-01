@@ -204,7 +204,7 @@ describe('MergeJoinOperator (Integration)', () => {
     expect(results[0]).toEqual({ pName: 'Widget', iQty: 10 });
   });
 
-  it('should throw error for non-equality operations', async () => {
+  it('should throw error for unsupported operations', async () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
@@ -219,13 +219,211 @@ describe('MergeJoinOperator (Integration)', () => {
     joinNode.condition = {
       left: 'u.id',
       right: 'o.userId',
-      operation: '>',
+      operation: 'array-contains',
     };
 
     const executor = new Executor(db);
 
     await expect(executor.execute(plan)).rejects.toThrow(
-      'MergeJoin strategy requires equality operation (==)'
+      'MergeJoin strategy requires comparison operation'
     );
+  });
+
+  it('should support < (less than) operator', async () => {
+    // Seed data
+    await db.collection('users').doc('1').set({ id: 1, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 3, val: 'b' });
+    await db.collection('users').doc('3').set({ id: 5, val: 'c' });
+
+    await db.collection('orders').doc('101').set({ userId: 2, other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: 4, other: 'y' });
+    await db.collection('orders').doc('103').set({ userId: 6, other: 'z' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Merge;
+    joinNode.condition = {
+      left: 'u.id',
+      right: 'o.userId',
+      operation: '<',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    // u.id=1 < o.userId in [2,4,6] -> 3 matches
+    // u.id=3 < o.userId in [4,6] -> 2 matches
+    // u.id=5 < o.userId in [6] -> 1 match
+    expect(results).toHaveLength(6);
+    expect(results).toContainEqual({ uId: 1, uVal: 'a', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 1, uVal: 'a', oUserId: 4, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 1, uVal: 'a', oUserId: 6, oOther: 'z' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'b', oUserId: 4, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'b', oUserId: 6, oOther: 'z' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'c', oUserId: 6, oOther: 'z' });
+  });
+
+  it('should support <= (less than or equal) operator', async () => {
+    // Seed data
+    await db.collection('users').doc('1').set({ id: 2, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 4, val: 'b' });
+
+    await db.collection('orders').doc('101').set({ userId: 2, other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: 3, other: 'y' });
+    await db.collection('orders').doc('103').set({ userId: 4, other: 'z' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Merge;
+    joinNode.condition = {
+      left: 'u.id',
+      right: 'o.userId',
+      operation: '<=',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    // u.id=2 <= o.userId in [2,3,4] -> 3 matches
+    // u.id=4 <= o.userId in [4] -> 1 match
+    expect(results).toHaveLength(4);
+    expect(results).toContainEqual({ uId: 2, uVal: 'a', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 2, uVal: 'a', oUserId: 3, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 2, uVal: 'a', oUserId: 4, oOther: 'z' });
+    expect(results).toContainEqual({ uId: 4, uVal: 'b', oUserId: 4, oOther: 'z' });
+  });
+
+  it('should support > (greater than) operator', async () => {
+    // Seed data
+    await db.collection('users').doc('1').set({ id: 3, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 5, val: 'b' });
+    await db.collection('users').doc('3').set({ id: 7, val: 'c' });
+
+    await db.collection('orders').doc('101').set({ userId: 2, other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: 4, other: 'y' });
+    await db.collection('orders').doc('103').set({ userId: 6, other: 'z' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Merge;
+    joinNode.condition = {
+      left: 'u.id',
+      right: 'o.userId',
+      operation: '>',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    // u.id=3 > o.userId in [2] -> 1 match
+    // u.id=5 > o.userId in [2,4] -> 2 matches
+    // u.id=7 > o.userId in [2,4,6] -> 3 matches
+    expect(results).toHaveLength(6);
+    expect(results).toContainEqual({ uId: 3, uVal: 'a', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'b', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'b', oUserId: 4, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 7, uVal: 'c', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 7, uVal: 'c', oUserId: 4, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 7, uVal: 'c', oUserId: 6, oOther: 'z' });
+  });
+
+  it('should support >= (greater than or equal) operator', async () => {
+    // Seed data
+    await db.collection('users').doc('1').set({ id: 3, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 5, val: 'b' });
+
+    await db.collection('orders').doc('101').set({ userId: 1, other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: 3, other: 'y' });
+    await db.collection('orders').doc('103').set({ userId: 5, other: 'z' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Merge;
+    joinNode.condition = {
+      left: 'u.id',
+      right: 'o.userId',
+      operation: '>=',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    // u.id=3 >= o.userId in [1,3] -> 2 matches
+    // u.id=5 >= o.userId in [1,3,5] -> 3 matches
+    expect(results).toHaveLength(5);
+    expect(results).toContainEqual({ uId: 3, uVal: 'a', oUserId: 1, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'a', oUserId: 3, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'b', oUserId: 1, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'b', oUserId: 3, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 5, uVal: 'b', oUserId: 5, oOther: 'z' });
+  });
+
+  it('should handle duplicates with inequality operators', async () => {
+    // Seed data with duplicates
+    await db.collection('users').doc('1').set({ id: 3, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 3, val: 'b' }); // Duplicate id
+
+    await db.collection('orders').doc('101').set({ userId: 2, other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: 2, other: 'y' }); // Duplicate userId
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.Merge;
+    joinNode.condition = {
+      left: 'u.id',
+      right: 'o.userId',
+      operation: '>',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    // Both u.id=3 rows match both o.userId=2 rows (3 > 2)
+    // 2 left rows × 2 right rows = 4 results
+    expect(results).toHaveLength(4);
+    expect(results).toContainEqual({ uId: 3, uVal: 'a', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'a', oUserId: 2, oOther: 'y' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'b', oUserId: 2, oOther: 'x' });
+    expect(results).toContainEqual({ uId: 3, uVal: 'b', oUserId: 2, oOther: 'y' });
   });
 });
