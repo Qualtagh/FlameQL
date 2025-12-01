@@ -1,7 +1,7 @@
 import * as admin from 'firebase-admin';
 import { JoinType } from '../api/hints';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
-import { Aggregate, Filter, FirestoreScan, HashJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
+import { Aggregate, Filter, FirestoreScan, HashJoinOperator, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
 import { isHashJoinCompatible } from './utils/operation-comparator';
 
 export class Executor {
@@ -31,6 +31,8 @@ export class Executor {
 
         if (hint === JoinType.Hash) {
           return new HashJoinOperator(left, right, joinNode);
+        } else if (hint === JoinType.Merge) {
+          return new MergeJoinOperator(left, right, joinNode);
         } else if (hint === JoinType.NestedLoop) {
           return new NestedLoopJoinOperator(left, right, joinNode);
         } else {
