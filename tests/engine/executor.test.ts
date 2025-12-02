@@ -31,6 +31,31 @@ describe('Executor', () => {
     ]);
   });
 
+  test('should execute a scan with nested fields', async () => {
+    await db.collection('products').doc('p1').set({
+      details: { price: 100, currency: 'USD' },
+      tags: [{ name: 'sale' }, { name: 'new' }],
+    });
+
+    const p = projection({
+      id: 'test_nested',
+      from: { p: collection('products') },
+      select: {
+        price: 'p.details.price',
+        tags: 'p.tags.name',
+      },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p);
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    expect(results).toStrictEqual([
+      { price: 100, tags: ['sale', 'new'] },
+    ]);
+  });
+
   test('should execute an aggregate', async () => {
     // Manually construct plan for aggregate since Planner doesn't fully support it yet
     const plan: any = {

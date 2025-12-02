@@ -177,4 +177,40 @@ describe('NestedLoopJoinOperator (Integration)', () => {
     expect(results).toContainEqual({ tStatus: 'active', rAllowed: ['active', 'pending'] });
     expect(results).toContainEqual({ tStatus: 'pending', rAllowed: ['active', 'pending'] });
   });
+
+  it('should join on nested field `price.currency`', async () => {
+    await db.collection('products').doc('prod1').set({ price: { value: 20, currency: 'USD' } });
+    await db.collection('products').doc('prod2').set({ price: { value: 15, currency: 'EUR' } });
+
+    await db.collection('currencyRates').doc('USD').set({ code: 'USD', rate: 1.0 });
+    await db.collection('currencyRates').doc('EUR').set({ code: 'EUR', rate: 0.9 });
+
+    const p = projection({
+      id: 'test',
+      from: { p: collection('products'), r: collection('currencyRates') },
+      select: { pPrice: 'p.price', rRate: 'r.rate' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.condition = {
+      left: 'p.price.currency',
+      right: 'r.code',
+      operation: '==',
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    expect(results).toStrictEqual([{
+      pPrice: { value: 20, currency: 'USD' },
+      rRate: 1.0,
+    }, {
+      pPrice: { value: 15, currency: 'EUR' },
+      rRate: 0.9,
+    }]);
+  });
 });

@@ -13,8 +13,26 @@ const METADATA_FIELD_MAP: Record<string, symbol> = {
 
 function getValue(row: any, path: string[]): any {
   let value = row;
-  for (const part of path) {
+  for (let i = 0; i < path.length; i++) {
+    const part = path[i];
     if (value === undefined || value === null) return null;
+
+    // Handle array traversal: if value is an array, map the rest of the path over it
+    if (Array.isArray(value)) {
+      const remainingPath = path.slice(i);
+      const results: any[] = [];
+      for (const item of value) {
+        const res = getValue(item, remainingPath);
+        if (res !== undefined && res !== null) {
+          if (Array.isArray(res)) {
+            results.push(...res);
+          } else {
+            results.push(res);
+          }
+        }
+      }
+      return results.length > 0 ? results : null;
+    }
 
     // Check if this is a metadata field reference (e.g., '#id')
     if (part.startsWith('#')) {
