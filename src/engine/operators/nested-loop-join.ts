@@ -61,11 +61,13 @@ export class NestedLoopJoinOperator implements Operator {
       const comparator = createOperationComparator(predicate.operation);
       return comparator(leftValue, rightValue);
     } else if (predicate.type === 'AND') {
-      return this.evaluatePredicate(predicate.left, leftRow, rightRow) &&
-        this.evaluatePredicate(predicate.right, leftRow, rightRow);
+      return predicate.conditions.every((c: any) => this.evaluatePredicate(c, leftRow, rightRow));
     } else if (predicate.type === 'OR') {
-      return this.evaluatePredicate(predicate.left, leftRow, rightRow) ||
-        this.evaluatePredicate(predicate.right, leftRow, rightRow);
+      return predicate.conditions.some((c: any) => this.evaluatePredicate(c, leftRow, rightRow));
+    } else if (predicate.type === 'NOT') {
+      return !this.evaluatePredicate(predicate.operand, leftRow, rightRow);
+    } else if (predicate.type === 'CONSTANT') {
+      return predicate.value;
     }
     throw new Error(`Unknown predicate type: ${predicate.type}`);
   }

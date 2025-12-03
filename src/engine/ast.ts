@@ -47,7 +47,7 @@ export interface JoinNode extends ExecutionNode {
   condition: Predicate;
 }
 
-export type Predicate = ComparisonPredicate | CompositePredicate;
+export type Predicate = ComparisonPredicate | CompositePredicate | NotPredicate | ConstantPredicate;
 
 export interface ComparisonPredicate {
   type: 'COMPARISON';
@@ -58,8 +58,17 @@ export interface ComparisonPredicate {
 
 export interface CompositePredicate {
   type: 'AND' | 'OR';
-  left: Predicate;
-  right: Predicate;
+  conditions: Predicate[];
+}
+
+export interface NotPredicate {
+  type: 'NOT';
+  operand: Predicate;
+}
+
+export interface ConstantPredicate {
+  type: 'CONSTANT';
+  value: boolean;
 }
 
 export interface AggregateNode extends ExecutionNode {

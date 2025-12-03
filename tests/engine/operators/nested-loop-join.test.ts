@@ -250,18 +250,20 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.condition = {
       type: 'AND',
-      left: {
-        type: 'COMPARISON',
-        left: 'u.id',
-        right: 'l.userId',
-        operation: '==',
-      },
-      right: {
-        type: 'COMPARISON',
-        left: 'u.role',
-        right: 'l.action',
-        operation: '==',
-      },
+      conditions: [
+        {
+          type: 'COMPARISON',
+          left: 'u.id',
+          right: 'l.userId',
+          operation: '==',
+        },
+        {
+          type: 'COMPARISON',
+          left: 'u.role',
+          right: 'l.action',
+          operation: '==',
+        },
+      ],
     };
 
     const executor = new Executor(db);
