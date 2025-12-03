@@ -1,11 +1,15 @@
 import * as admin from 'firebase-admin';
 import { JoinType } from '../api/hints';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
+import { IndexManager } from './indexes/index-manager';
 import { Aggregate, Filter, FirestoreScan, HashJoinOperator, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
 import { isHashJoinCompatible } from './utils/operation-comparator';
 
 export class Executor {
-  constructor(private db: admin.firestore.Firestore) { }
+  constructor(
+    private db: admin.firestore.Firestore,
+    private indexManager?: IndexManager
+  ) { }
 
   async execute(plan: ExecutionNode): Promise<any[]> {
     const rootOperator = this.buildOperatorTree(plan);
@@ -20,7 +24,7 @@ export class Executor {
   private buildOperatorTree(node: ExecutionNode): Operator {
     switch (node.type) {
       case NodeType.SCAN:
-        return new FirestoreScan(this.db, node as ScanNode);
+        return new FirestoreScan(this.db, node as ScanNode, this.indexManager);
       case NodeType.JOIN:
         const joinNode = node as JoinNode;
         const left = this.buildOperatorTree(joinNode.left);

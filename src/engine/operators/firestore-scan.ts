@@ -1,15 +1,19 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
+import { IndexManager } from '../indexes/index-manager';
 import { DOC_COLLECTION, DOC_ID, DOC_PARENT, DOC_PATH, DocumentMetadata } from '../symbols';
-import { Operator } from './operator';
+import { Operator, SortOrder } from './operator';
 
 export class FirestoreScan implements Operator {
   private snapshot: admin.firestore.QuerySnapshot | null = null;
   private index = 0;
+  private sortOrder?: SortOrder;
 
   constructor(
     private db: admin.firestore.Firestore,
-    private node: ScanNode
+    private node: ScanNode,
+    private indexManager?: IndexManager
   ) { }
 
   async next(): Promise<any | null> {
@@ -21,6 +25,11 @@ export class FirestoreScan implements Operator {
         // TODO: Handle field paths correctly
         const fieldPath = constraint.field.path.join('.');
         query = query.where(fieldPath, constraint.op, constraint.value.value);
+      }
+
+      // Apply sort if requested
+      if (this.sortOrder) {
+        query = query.orderBy(this.stripAliasPrefix(this.sortOrder.field), this.sortOrder.direction);
       }
 
       this.snapshot = await query.get();
@@ -36,6 +45,30 @@ export class FirestoreScan implements Operator {
     }
 
     return null;
+  }
+
+  getSortOrder(): SortOrder | undefined {
+    return this.sortOrder;
+  }
+
+  requestSort(field: string, direction: OrderByDirection): boolean {
+    if (this.snapshot) {
+      // Cannot change sort order after execution started
+      return false;
+    }
+
+    // TODO: Validate with IndexManager if provided
+    // For now, assume single-field sort is always possible
+    this.sortOrder = { field, direction };
+    return true;
+  }
+
+  private stripAliasPrefix(field: string): string {
+    // Strip alias prefix if present (e.g., 'u.id' -> 'id')
+    const aliasPrefix = `${this.node.alias}.`;
+    return field.startsWith(aliasPrefix)
+      ? field.substring(aliasPrefix.length)
+      : field;
   }
 }
 

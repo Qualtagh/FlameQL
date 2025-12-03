@@ -6,7 +6,7 @@ import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
 import { clearDatabase, db } from '../../setup';
 
-describe('HashJoinOperator (Integration)', () => {
+describe('HashJoinOperator', () => {
   beforeEach(async () => {
     await clearDatabase();
   });

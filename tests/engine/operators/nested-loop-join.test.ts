@@ -6,7 +6,7 @@ import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
 import { clearDatabase, db } from '../../setup';
 
-describe('NestedLoopJoinOperator (Integration)', () => {
+describe('NestedLoopJoinOperator', () => {
   beforeEach(async () => {
     await clearDatabase();
   });

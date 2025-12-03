@@ -6,7 +6,7 @@ import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
 import { clearDatabase, db } from '../../setup';
 
-describe('MergeJoinOperator (Integration)', () => {
+describe('MergeJoinOperator', () => {
   beforeEach(async () => {
     await clearDatabase();
   });

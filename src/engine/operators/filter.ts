@@ -1,5 +1,6 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import { FilterNode } from '../ast';
-import { Operator } from './operator';
+import { Operator, SortOrder } from './operator';
 
 export class Filter implements Operator {
   constructor(
@@ -22,5 +23,13 @@ export class Filter implements Operator {
   private evaluatePredicate(_predicate: any, _row: any): boolean {
     // Placeholder for predicate evaluation
     return true;
+  }
+
+  getSortOrder(): SortOrder | undefined {
+    return this.source.getSortOrder();
+  }
+
+  requestSort(field: string, direction: OrderByDirection): boolean {
+    return this.source.requestSort(field, direction);
   }
 }

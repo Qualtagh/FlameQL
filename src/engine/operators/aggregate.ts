@@ -1,5 +1,6 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import { AggregateNode } from '../ast';
-import { Operator } from './operator';
+import { Operator, SortOrder } from './operator';
 
 export class Aggregate implements Operator {
   private groups: Map<string, any> = new Map();
@@ -36,5 +37,13 @@ export class Aggregate implements Operator {
       // TODO: Use evaluator
       return row[field.source!]?.[field.path[0]] || '';
     }).join('_');
+  }
+
+  getSortOrder(): SortOrder | undefined {
+    return undefined;
+  }
+
+  requestSort(_field: string, _direction: OrderByDirection): boolean {
+    return false;
   }
 }

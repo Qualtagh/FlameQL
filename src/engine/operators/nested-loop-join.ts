@@ -1,7 +1,8 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import { JoinNode } from '../ast';
 import { getValueFromPath } from '../evaluator';
 import { createOperationComparator } from '../utils/operation-comparator';
-import { Operator } from './operator';
+import { Operator, SortOrder } from './operator';
 
 /**
  * NestedLoopJoinOperator
@@ -62,5 +63,13 @@ export class NestedLoopJoinOperator implements Operator {
 
       this.currentLeftRow = null;
     }
+  }
+
+  getSortOrder(): SortOrder | undefined {
+    return undefined;
+  }
+
+  requestSort(_field: string, _direction: OrderByDirection): boolean {
+    return false;
   }
 }

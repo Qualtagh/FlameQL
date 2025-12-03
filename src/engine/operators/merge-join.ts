@@ -1,6 +1,7 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import { JoinNode } from '../ast';
 import { getValueFromPath } from '../evaluator';
-import { Operator } from './operator';
+import { Operator, SortOrder } from './operator';
 
 /**
  * MergeJoinOperator
@@ -81,7 +82,25 @@ export class MergeJoinOperator implements Operator {
     }
   }
 
+  getSortOrder(): SortOrder | undefined {
+    // MergeJoin produces output sorted by the join keys (ASC)
+    // We can report it as sorted by the left field
+    return { field: this.leftField, direction: 'asc' };
+  }
+
+  requestSort(field: string, direction: OrderByDirection): boolean {
+    // We can only satisfy sort requests on the join key
+    if (field === this.leftField && direction === 'asc') {
+      return true;
+    }
+    return false;
+  }
+
   private async buildSortedBuffers() {
+    // Try to request sort from sources
+    this.leftSource.requestSort(this.leftField, 'asc');
+    this.rightSource.requestSort(this.rightField, 'asc');
+
     // Load left collection
     let row;
     while (row = await this.leftSource.next()) {
@@ -93,20 +112,31 @@ export class MergeJoinOperator implements Operator {
       this.rightBuffer.push(row);
     }
 
-    // Sort both buffers by their join fields
-    this.leftBuffer.sort((a, b) =>
-      this.compareValues(
-        getValueFromPath(a, this.leftField),
-        getValueFromPath(b, this.leftField)
-      )
-    );
+    // Check if left is already sorted
+    const leftSort = this.leftSource.getSortOrder();
+    const leftSorted = leftSort && leftSort.field === this.leftField && leftSort.direction === 'asc';
 
-    this.rightBuffer.sort((a, b) =>
-      this.compareValues(
-        getValueFromPath(a, this.rightField),
-        getValueFromPath(b, this.rightField)
-      )
-    );
+    if (!leftSorted) {
+      this.leftBuffer.sort((a, b) =>
+        this.compareValues(
+          getValueFromPath(a, this.leftField),
+          getValueFromPath(b, this.leftField)
+        )
+      );
+    }
+
+    // Check if right is already sorted
+    const rightSort = this.rightSource.getSortOrder();
+    const rightSorted = rightSort && rightSort.field === this.rightField && rightSort.direction === 'asc';
+
+    if (!rightSorted) {
+      this.rightBuffer.sort((a, b) =>
+        this.compareValues(
+          getValueFromPath(a, this.rightField),
+          getValueFromPath(b, this.rightField)
+        )
+      );
+    }
   }
 
   private findNextMatches(): boolean {
