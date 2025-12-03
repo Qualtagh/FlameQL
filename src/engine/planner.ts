@@ -1,6 +1,8 @@
 import { Collection, Field, JoinType, Literal, LiteralType } from '../api/expression';
 import { Projection } from '../api/projection';
-import { ExecutionNode, JoinNode, NodeType, ScanNode } from './ast';
+import { ExecutionNode, JoinNode, NodeType, Predicate, ScanNode } from './ast';
+import { isHashJoinCompatible } from './utils/operation-comparator';
+import { simplifyPredicate } from './utils/predicate-utils';
 
 export interface FirestoreIndex {
   collectionGroup: string;
@@ -50,21 +52,34 @@ export class Planner {
       const alias = sourceKeys[i];
       const rightNode = scanNodes[alias];
 
-      const joinType = projection.hints?.joinType || JoinType.NestedLoop;
+      // TODO: Extract join conditions from projection.where.
+      // By default, when no conditions are specified, cross-product is used.
+      const condition: Predicate = {
+        type: 'CONSTANT',
+        value: true,
+      };
 
-      root = {
+      let joinType = projection.hints?.joinType;
+      if (!joinType) {
+        if (isHashJoinCompatible(condition)) {
+          joinType = JoinType.Hash;
+        } else {
+          joinType = JoinType.NestedLoop;
+        }
+      }
+
+      const joinNode: JoinNode = {
         type: NodeType.JOIN,
         left: root,
         right: rightNode,
         joinType: joinType,
-        // TODO: Extract join conditions from projection.where
-        condition: {
-          type: 'COMPARISON',
-          left: 'id',
-          right: 'id',
-          operation: '==',
-        },
-      } as JoinNode;
+        condition,
+      };
+
+      // Apply logical simplification to join conditions
+      joinNode.condition = simplifyPredicate(joinNode.condition);
+
+      root = joinNode;
     }
 
     // 5. Add Projection (Select)

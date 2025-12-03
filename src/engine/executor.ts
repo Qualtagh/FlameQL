@@ -3,7 +3,6 @@ import { JoinType } from '../api/hints';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { Aggregate, Filter, FirestoreScan, HashJoinOperator, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
-import { isHashJoinCompatible } from './utils/operation-comparator';
 
 export class Executor {
   constructor(
@@ -30,19 +29,17 @@ export class Executor {
         const left = this.buildOperatorTree(joinNode.left);
         const right = this.buildOperatorTree(joinNode.right);
         const hint = joinNode.joinType;
-        if (hint === JoinType.Hash) {
-          return new HashJoinOperator(left, right, joinNode);
-        } else if (hint === JoinType.Merge) {
-          return new MergeJoinOperator(left, right, joinNode);
-        } else if (hint === JoinType.NestedLoop) {
-          return new NestedLoopJoinOperator(left, right, joinNode);
-        } else {
-          // Auto-selection
-          if (isHashJoinCompatible(joinNode.condition)) {
+        switch (hint) {
+          case JoinType.Hash:
             return new HashJoinOperator(left, right, joinNode);
-          } else {
+          case JoinType.Merge:
+            return new MergeJoinOperator(left, right, joinNode);
+          case JoinType.NestedLoop:
             return new NestedLoopJoinOperator(left, right, joinNode);
-          }
+          case JoinType.IndexNestedLoop:
+            throw new Error('IndexNestedLoop join type has not been implemented yet');
+          default:
+            hint satisfies never;
         }
       case NodeType.PROJECT:
         const projectNode = node as ProjectNode;
@@ -63,8 +60,9 @@ export class Executor {
           aggregateNode
         );
       default:
-        throw new Error(`Unsupported node type: ${node.type}`);
+        node.type satisfies never;
     }
+    throw new Error(`Unsupported node: ${node}`);
   }
 
 }
