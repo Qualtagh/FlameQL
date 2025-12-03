@@ -1,6 +1,7 @@
 import { OrderByDirection } from '@google-cloud/firestore';
-import { JoinNode } from '../ast';
+import { ComparisonPredicate, JoinNode } from '../ast';
 import { getValueFromPath } from '../evaluator';
+import { isMergeJoinCompatible } from '../utils/operation-comparator';
 import { Operator, SortOrder } from './operator';
 
 /**
@@ -43,16 +44,15 @@ export class MergeJoinOperator implements Operator {
     private rightSource: Operator,
     node: JoinNode
   ) {
-    const supportedOps = ['==', '<', '<=', '>', '>='];
-    if (!supportedOps.includes(node.condition.operation)) {
+    if (!isMergeJoinCompatible(node.condition)) {
       throw new Error(
-        `MergeJoin strategy requires comparison operation (==, <, <=, >, >=), got: ${node.condition.operation}`
+        `MergeJoin strategy requires comparison operation (==, <, <=, >, >=), got: ${node.condition}`
       );
     }
-
-    this.operation = node.condition.operation;
-    this.leftField = node.condition.left;
-    this.rightField = node.condition.right;
+    const condition = node.condition as ComparisonPredicate;
+    this.operation = condition.operation;
+    this.leftField = condition.left;
+    this.rightField = condition.right;
   }
 
   async next(): Promise<any | null> {

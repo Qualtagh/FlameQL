@@ -95,6 +95,7 @@ describe('Executor', () => {
     // Manually set join condition for now since Planner doesn't extract it yet
     const joinNode = plan.source as JoinNode;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'j.#id',
       right: 's.jobId',
       operation: '==',

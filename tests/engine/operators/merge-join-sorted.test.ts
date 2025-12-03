@@ -48,6 +48,7 @@ describe('Merge Join Optimization', () => {
       right: rightScanNode,
       joinType: JoinType.Merge,
       condition: {
+        type: 'COMPARISON',
         left: 'u.id',
         right: 'o.userId',
         operation: '==',

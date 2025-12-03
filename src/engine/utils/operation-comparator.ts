@@ -1,4 +1,5 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
+import { Predicate } from '../ast';
 
 /**
  * Converts a WhereFilterOp into a binary comparison callback function.
@@ -76,12 +77,27 @@ export function createOperationComparator(
  * Determines if an operation can be optimized using a hash join.
  * Hash joins require operations that can be efficiently indexed.
  */
-export function isHashJoinCompatible(operation: WhereFilterOp): boolean {
-  switch (operation) {
+export function isHashJoinCompatible(predicate: Predicate): boolean {
+  if (predicate.type !== 'COMPARISON') return false;
+  switch (predicate.operation) {
     case '==':
     case 'in':
     case 'array-contains':
     case 'array-contains-any':
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isMergeJoinCompatible(predicate: Predicate): boolean {
+  if (predicate.type !== 'COMPARISON') return false;
+  switch (predicate.operation) {
+    case '==':
+    case '>':
+    case '>=':
+    case '<':
+    case '<=':
       return true;
     default:
       return false;

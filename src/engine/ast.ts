@@ -44,13 +44,22 @@ export interface JoinNode extends ExecutionNode {
   left: ExecutionNode;
   right: ExecutionNode;
   joinType: JoinType;
-  condition: JoinCondition;
+  condition: Predicate;
 }
 
-export interface JoinCondition {
+export type Predicate = ComparisonPredicate | CompositePredicate;
+
+export interface ComparisonPredicate {
+  type: 'COMPARISON';
   left: string;
   right: string;
   operation: WhereFilterOp;
+}
+
+export interface CompositePredicate {
+  type: 'AND' | 'OR';
+  left: Predicate;
+  right: Predicate;
 }
 
 export interface AggregateNode extends ExecutionNode {

@@ -33,6 +33,7 @@ describe('NestedLoopJoinOperator', () => {
     // Force NestedLoop Join
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -67,6 +68,7 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 's.val',
       right: 't.limit',
       operation: '>',
@@ -103,6 +105,7 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'p.tags',
       right: 's.tag',
       operation: 'array-contains',
@@ -134,6 +137,7 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'i.tags',
       right: 'f.options',
       operation: 'array-contains-any',
@@ -165,6 +169,7 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 't.status',
       right: 'r.allowed',
       operation: 'in',
@@ -197,6 +202,7 @@ describe('NestedLoopJoinOperator', () => {
 
     joinNode.joinType = JoinType.NestedLoop;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'p.price.currency',
       right: 'r.code',
       operation: '==',
@@ -212,5 +218,56 @@ describe('NestedLoopJoinOperator', () => {
       pPrice: { value: 15, currency: 'EUR' },
       rRate: 0.9,
     }]);
+  });
+
+  it('should join using complex AND/OR conditions', async () => {
+    await db.collection('users').doc('1').set({ id: 1, role: 'admin', active: true });
+    await db.collection('users').doc('2').set({ id: 2, role: 'user', active: true });
+    await db.collection('users').doc('3').set({ id: 3, role: 'user', active: false });
+
+    await db.collection('logs').doc('l1').set({ userId: 1, action: 'login' });
+    await db.collection('logs').doc('l2').set({ userId: 2, action: 'logout' });
+    await db.collection('logs').doc('l3').set({ userId: 3, action: 'login' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), l: collection('logs') },
+      select: { uId: 'u.id', lAction: 'l.action' },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    joinNode.joinType = JoinType.NestedLoop;
+
+    // Join users and logs where:
+    // (u.id == l.userId) AND (u.role == l.action)
+
+    // Let's adjust data to make it match
+    await db.collection('users').doc('4').set({ id: 4, role: 'login', active: true });
+    await db.collection('logs').doc('l4').set({ userId: 4, action: 'login' });
+
+    joinNode.condition = {
+      type: 'AND',
+      left: {
+        type: 'COMPARISON',
+        left: 'u.id',
+        right: 'l.userId',
+        operation: '==',
+      },
+      right: {
+        type: 'COMPARISON',
+        left: 'u.role',
+        right: 'l.action',
+        operation: '==',
+      },
+    };
+
+    const executor = new Executor(db);
+    const results = await executor.execute(plan);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({ uId: 4, lAction: 'login' });
   });
 });

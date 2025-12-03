@@ -34,6 +34,7 @@ describe('MergeJoinOperator', () => {
     // Force Merge Join and set condition
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -70,6 +71,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -98,6 +100,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -129,6 +132,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -160,6 +164,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -192,6 +197,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'p.code',
       right: 'i.productCode',
       operation: '==',
@@ -217,6 +223,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: 'array-contains',
@@ -251,6 +258,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '<',
@@ -292,6 +300,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '<=',
@@ -331,6 +340,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '>',
@@ -372,6 +382,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '>=',
@@ -410,6 +421,7 @@ describe('MergeJoinOperator', () => {
 
     joinNode.joinType = JoinType.Merge;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '>',

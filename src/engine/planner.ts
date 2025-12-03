@@ -59,6 +59,7 @@ export class Planner {
         joinType: joinType,
         // TODO: Extract join conditions from projection.where
         condition: {
+          type: 'COMPARISON',
           left: 'id',
           right: 'id',
           operation: '==',

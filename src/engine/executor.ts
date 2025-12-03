@@ -29,10 +29,7 @@ export class Executor {
         const joinNode = node as JoinNode;
         const left = this.buildOperatorTree(joinNode.left);
         const right = this.buildOperatorTree(joinNode.right);
-
-        const canUseHash = isHashJoinCompatible(joinNode.condition.operation);
         const hint = joinNode.joinType;
-
         if (hint === JoinType.Hash) {
           return new HashJoinOperator(left, right, joinNode);
         } else if (hint === JoinType.Merge) {
@@ -41,7 +38,7 @@ export class Executor {
           return new NestedLoopJoinOperator(left, right, joinNode);
         } else {
           // Auto-selection
-          if (canUseHash) {
+          if (isHashJoinCompatible(joinNode.condition)) {
             return new HashJoinOperator(left, right, joinNode);
           } else {
             return new NestedLoopJoinOperator(left, right, joinNode);

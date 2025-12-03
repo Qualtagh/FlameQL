@@ -34,6 +34,7 @@ describe('HashJoinOperator', () => {
     // Force Hash Join and set condition
     joinNode.joinType = JoinType.Hash;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'u.id',
       right: 'o.userId',
       operation: '==',
@@ -74,6 +75,7 @@ describe('HashJoinOperator', () => {
 
     joinNode.joinType = JoinType.Hash;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'p.tags',
       right: 's.tag',
       operation: 'array-contains',
@@ -108,6 +110,7 @@ describe('HashJoinOperator', () => {
 
     joinNode.joinType = JoinType.Hash;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 'i.tags',
       right: 'f.options',
       operation: 'array-contains-any',
@@ -140,6 +143,7 @@ describe('HashJoinOperator', () => {
 
     joinNode.joinType = JoinType.Hash;
     joinNode.condition = {
+      type: 'COMPARISON',
       left: 't.tag',
       right: 'f.options',
       operation: 'in',

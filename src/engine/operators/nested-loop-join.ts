@@ -19,19 +19,11 @@ export class NestedLoopJoinOperator implements Operator {
   private initialized = false;
   private currentLeftRow: any | null = null;
   private rightIndex = 0;
-  private comparator: (a: any, b: any) => boolean;
-  private leftField: string;
-  private rightField: string;
-
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
-    node: JoinNode
-  ) {
-    this.leftField = node.condition.left;
-    this.rightField = node.condition.right;
-    this.comparator = createOperationComparator(node.condition.operation);
-  }
+    private node: JoinNode
+  ) { }
 
   async next(): Promise<any | null> {
     if (!this.initialized) {
@@ -53,16 +45,29 @@ export class NestedLoopJoinOperator implements Operator {
       while (this.rightIndex < this.rightBuffer.length) {
         const rightRow = this.rightBuffer[this.rightIndex++];
 
-        const leftValue = getValueFromPath(this.currentLeftRow, this.leftField);
-        const rightValue = getValueFromPath(rightRow, this.rightField);
-
-        if (this.comparator(leftValue, rightValue)) {
+        if (this.evaluatePredicate(this.node.condition, this.currentLeftRow, rightRow)) {
           return { ...this.currentLeftRow, ...rightRow };
         }
       }
 
       this.currentLeftRow = null;
     }
+  }
+
+  private evaluatePredicate(predicate: any, leftRow: any, rightRow: any): boolean {
+    if (predicate.type === 'COMPARISON') {
+      const leftValue = getValueFromPath(leftRow, predicate.left);
+      const rightValue = getValueFromPath(rightRow, predicate.right);
+      const comparator = createOperationComparator(predicate.operation);
+      return comparator(leftValue, rightValue);
+    } else if (predicate.type === 'AND') {
+      return this.evaluatePredicate(predicate.left, leftRow, rightRow) &&
+        this.evaluatePredicate(predicate.right, leftRow, rightRow);
+    } else if (predicate.type === 'OR') {
+      return this.evaluatePredicate(predicate.left, leftRow, rightRow) ||
+        this.evaluatePredicate(predicate.right, leftRow, rightRow);
+    }
+    throw new Error(`Unknown predicate type: ${predicate.type}`);
   }
 
   getSortOrder(): SortOrder | undefined {

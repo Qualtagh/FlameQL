@@ -1,5 +1,5 @@
 import { OrderByDirection } from '@google-cloud/firestore';
-import { JoinNode } from '../ast';
+import { ComparisonPredicate, JoinNode } from '../ast';
 import { getValueFromPath } from '../evaluator';
 import { isHashJoinCompatible } from '../utils/operation-comparator';
 import { Operator, SortOrder } from './operator';
@@ -29,15 +29,15 @@ export class HashJoinOperator implements Operator {
     private rightSource: Operator,
     node: JoinNode
   ) {
-    if (!isHashJoinCompatible(node.condition.operation)) {
+    if (!isHashJoinCompatible(node.condition)) {
       throw new Error(
-        `HashJoin strategy requires hash-compatible operation (==, in, array-contains, array-contains-any), got: ${node.condition.operation}`
+        `HashJoin strategy requires hash-compatible operation (==, in, array-contains, array-contains-any), got: ${node.condition}`
       );
     }
-
-    this.operation = node.condition.operation;
-    this.leftField = node.condition.left;
-    this.rightField = node.condition.right;
+    const condition = node.condition as ComparisonPredicate;
+    this.operation = condition.operation;
+    this.leftField = condition.left;
+    this.rightField = condition.right;
   }
 
   async next(): Promise<any | null> {
