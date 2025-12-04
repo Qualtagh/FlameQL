@@ -1,18 +1,17 @@
 import { Collection, Field, JoinType, Literal, LiteralType } from '../api/expression';
 import { Projection } from '../api/projection';
-import { ExecutionNode, JoinNode, NodeType, Predicate, ScanNode } from './ast';
+import { Constraint, ExecutionNode, JoinNode, NodeType, Predicate, ProjectNode, ScanNode, UnionNode } from './ast';
+import { Optimizer } from './optimizer';
 import { isHashJoinCompatible } from './utils/operation-comparator';
 import { simplifyPredicate } from './utils/predicate-utils';
 
-export interface FirestoreIndex {
-  collectionGroup: string;
-  queryScope: 'COLLECTION' | 'COLLECTION_GROUP';
-  fields: { fieldPath: string; order: 'ASCENDING' | 'DESCENDING' }[];
-}
+import { IndexManager } from './indexes/index-manager';
 
 export class Planner {
+  private optimizer: Optimizer;
 
-  constructor(_indexes: FirestoreIndex[] = []) {
+  constructor(indexManager: IndexManager = new IndexManager()) {
+    this.optimizer = new Optimizer(indexManager);
   }
 
   plan(projection: Projection): ExecutionNode {
@@ -25,7 +24,9 @@ export class Planner {
     }
 
     // 2. Create ScanNodes for each source
-    const scanNodes: Record<string, ScanNode> = {};
+    const scanNodes: Record<string, ExecutionNode> = {};
+    const wherePredicate = projection.where as Predicate | undefined;
+
     for (const alias of sourceKeys) {
       const source = sources[alias] as Collection;
 
@@ -37,12 +38,29 @@ export class Planner {
         path = 'unknown';
       }
 
-      scanNodes[alias] = {
-        type: NodeType.SCAN,
-        collectionPath: path,
-        alias: alias,
-        constraints: [],
-      };
+      // Extract predicate for this source
+      const sourcePredicate = wherePredicate ? this.extractPredicateForSource(wherePredicate, alias) : undefined;
+      if (sourcePredicate) {
+        // Optimize scan strategy
+        const optimization = this.optimizer.optimize(sourcePredicate, path);
+
+        if (optimization.strategy === 'UNION_SCAN') {
+          const inputs: ExecutionNode[] = optimization.scans.map(scanPred =>
+            this.createScanNode(alias, path, scanPred)
+          );
+          scanNodes[alias] = {
+            type: NodeType.UNION,
+            inputs,
+            deduplicateByDocPath: true, // DNF optimization: safe to use DOC_PATH since all scans have same fields
+          } as UnionNode;
+        } else {
+          // Single Scan
+          scanNodes[alias] = this.createScanNode(alias, path, optimization.scans[0]);
+        }
+      } else {
+        // No predicate, full scan
+        scanNodes[alias] = this.createScanNode(alias, path, undefined);
+      }
     }
 
     // 4. Handle Joins
@@ -52,8 +70,10 @@ export class Planner {
       const alias = sourceKeys[i];
       const rightNode = scanNodes[alias];
 
-      // TODO: Extract join conditions from projection.where.
-      // By default, when no conditions are specified, cross-product is used.
+      // TODO: Extract join conditions from projection.where correctly.
+      // Currently assuming wherePredicate contains everything, but we need to separate join conditions.
+      // For now, using a placeholder TRUE condition or extracting from where if possible.
+
       const condition: Predicate = {
         type: 'CONSTANT',
         value: true,
@@ -98,13 +118,74 @@ export class Planner {
         }
       }
 
-      root = {
+      return {
         type: NodeType.PROJECT,
         source: root,
-        fields: fields,
-      } as any;
+        fields,
+      } as ProjectNode;
     }
 
     return root;
+  }
+
+  private createScanNode(alias: string, path: string, predicate: Predicate | undefined): ScanNode {
+    const constraints: Constraint[] = [];
+    if (predicate) {
+      this.extractConstraints(predicate, constraints);
+    }
+    return {
+      type: NodeType.SCAN,
+      collectionPath: path,
+      alias: alias,
+      constraints: constraints,
+    };
+  }
+
+  private extractConstraints(predicate: Predicate, constraints: Constraint[]) {
+    if (predicate.type === 'AND') {
+      predicate.conditions.forEach(c => this.extractConstraints(c, constraints));
+    } else if (predicate.type === 'COMPARISON') {
+      // Assuming left is field, right is value (simplified)
+      // TODO: Handle field vs field comparisons (joins) vs field vs literal
+      // For now, assuming right is a literal value string
+      // We need to strip the alias from the field path
+      const fieldParts = predicate.left.split('.');
+      // const fieldName = fieldParts.length > 1 ? fieldParts.slice(1).join('.') : predicate.left;
+
+      constraints.push({
+        field: new Field(fieldParts[0], fieldParts.slice(1)), // This might be wrong if alias is included
+        op: predicate.operation,
+        value: new Literal(predicate.right, LiteralType.String), // Simplified
+      });
+    }
+  }
+
+  private extractPredicateForSource(predicate: Predicate, alias: string): Predicate | null {
+    // Recursively find conditions that ONLY refer to this alias
+    if (predicate.type === 'AND') {
+      const conditions = predicate.conditions
+        .map(c => this.extractPredicateForSource(c, alias))
+        .filter((c): c is Predicate => c !== null);
+
+      if (conditions.length === 0) return null;
+      if (conditions.length === 1) return conditions[0];
+      return { type: 'AND', conditions };
+    } else if (predicate.type === 'OR') {
+      const conditions = predicate.conditions
+        .map(c => this.extractPredicateForSource(c, alias))
+        .filter((c): c is Predicate => c !== null);
+
+      // For OR, if any branch doesn't apply to this alias, we can't push it down easily
+      // unless it's a full scan.
+      // But if ALL branches apply to this alias, we can keep it.
+      if (conditions.length !== predicate.conditions.length) return null;
+
+      return { type: 'OR', conditions };
+    } else if (predicate.type === 'COMPARISON') {
+      if (predicate.left.startsWith(alias + '.')) {
+        return predicate;
+      }
+    }
+    return null;
   }
 }

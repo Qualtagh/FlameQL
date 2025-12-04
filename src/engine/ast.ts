@@ -7,6 +7,7 @@ export enum NodeType {
   PROJECT = 'PROJECT',
   JOIN = 'JOIN',
   AGGREGATE = 'AGGREGATE',
+  UNION = 'UNION',
 }
 
 export interface ExecutionNode {
@@ -76,4 +77,13 @@ export interface AggregateNode extends ExecutionNode {
   source: ExecutionNode;
   groupBy: Field[];
   aggregates: Record<string, any>; // TODO: Define Aggregate Function
+}
+
+export interface UnionNode extends ExecutionNode {
+  type: NodeType.UNION;
+  inputs: ExecutionNode[];
+  /** SQL-style DISTINCT: deduplicate by comparing all fields (uses hashing + equality) */
+  distinct?: boolean;
+  /** Optimizer-safe: deduplicate by DOC_PATH only. Only safe when all inputs scan same fields. */
+  deduplicateByDocPath?: boolean;
 }

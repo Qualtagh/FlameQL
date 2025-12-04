@@ -1,8 +1,9 @@
 import * as admin from 'firebase-admin';
 import { JoinType } from '../api/hints';
-import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode } from './ast';
+import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { Aggregate, Filter, FirestoreScan, HashJoinOperator, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
+import { Union } from './operators/union';
 
 export class Executor {
   constructor(
@@ -58,6 +59,13 @@ export class Executor {
         return new Aggregate(
           this.buildOperatorTree(aggregateNode.source),
           aggregateNode
+        );
+      case NodeType.UNION:
+        const unionNode = node as UnionNode;
+        return new Union(
+          unionNode.inputs.map(input => this.buildOperatorTree(input)),
+          unionNode.distinct,
+          unionNode.deduplicateByDocPath
         );
       default:
         node.type satisfies never;
