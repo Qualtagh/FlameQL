@@ -1,17 +1,20 @@
 import { Collection, Field, JoinType, Literal, LiteralType } from '../api/expression';
 import { Projection } from '../api/projection';
-import { Constraint, ExecutionNode, JoinNode, NodeType, Predicate, ProjectNode, ScanNode, UnionNode } from './ast';
+import { Constraint, ExecutionNode, FilterNode, JoinNode, NodeType, Predicate, ProjectNode, ScanNode, UnionNode } from './ast';
 import { Optimizer } from './optimizer';
 import { isHashJoinCompatible } from './utils/operation-comparator';
 import { simplifyPredicate } from './utils/predicate-utils';
 
 import { IndexManager } from './indexes/index-manager';
+import { PredicateSplitter } from './predicate-splitter';
 
 export class Planner {
   private optimizer: Optimizer;
+  private predicateSplitter: PredicateSplitter;
 
   constructor(indexManager: IndexManager = new IndexManager()) {
     this.optimizer = new Optimizer(indexManager);
+    this.predicateSplitter = new PredicateSplitter();
   }
 
   plan(projection: Projection): ExecutionNode {
@@ -23,9 +26,21 @@ export class Planner {
       throw new Error('No sources defined in projection');
     }
 
-    // 2. Create ScanNodes for each source
-    const scanNodes: Record<string, ExecutionNode> = {};
+    // 2. Split Predicates
     const wherePredicate = projection.where as Predicate | undefined;
+    let sourcePredicates: Record<string, Predicate> = {};
+    let joinPredicates: Predicate[] = [];
+    let residualPredicates: Predicate[] = [];
+
+    if (wherePredicate) {
+      const split = this.predicateSplitter.split(wherePredicate, sourceKeys);
+      sourcePredicates = split.sourcePredicates;
+      joinPredicates = split.joinPredicates;
+      residualPredicates = split.residualPredicates;
+    }
+
+    // 3. Create ScanNodes for each source
+    const scanNodes: Record<string, ExecutionNode> = {};
 
     for (const alias of sourceKeys) {
       const source = sources[alias] as Collection;
@@ -39,7 +54,7 @@ export class Planner {
       }
 
       // Extract predicate for this source
-      const sourcePredicate = wherePredicate ? this.extractPredicateForSource(wherePredicate, alias) : undefined;
+      const sourcePredicate = sourcePredicates[alias];
       if (sourcePredicate) {
         // Optimize scan strategy
         const optimization = this.optimizer.optimize(sourcePredicate, path);
@@ -65,19 +80,41 @@ export class Planner {
 
     // 4. Handle Joins
     let root: ExecutionNode = scanNodes[sourceKeys[0]];
+    const joinedAliases = new Set([sourceKeys[0]]);
+
+    // Copy joinPredicates to a mutable list so we can consume them
+    let remainingJoinPredicates = [...joinPredicates];
 
     for (let i = 1; i < sourceKeys.length; i++) {
       const alias = sourceKeys[i];
       const rightNode = scanNodes[alias];
 
-      // TODO: Extract join conditions from projection.where correctly.
-      // Currently assuming wherePredicate contains everything, but we need to separate join conditions.
-      // For now, using a placeholder TRUE condition or extracting from where if possible.
+      // Find relevant join conditions
+      const relevantConditions: Predicate[] = [];
+      const nextRemaining: Predicate[] = [];
 
-      const condition: Predicate = {
-        type: 'CONSTANT',
-        value: true,
-      };
+      for (const pred of remainingJoinPredicates) {
+        const involved = this.predicateSplitter.getInvolvedSources(pred, sourceKeys);
+        const hasCurrent = involved.includes(alias);
+        const hasJoined = involved.some(s => joinedAliases.has(s));
+        const hasFuture = involved.some(s => !joinedAliases.has(s) && s !== alias);
+
+        if (hasCurrent && hasJoined && !hasFuture) {
+          relevantConditions.push(pred);
+        } else {
+          nextRemaining.push(pred);
+        }
+      }
+      remainingJoinPredicates = nextRemaining;
+
+      let condition: Predicate;
+      if (relevantConditions.length === 0) {
+        condition = { type: 'CONSTANT', value: true };
+      } else if (relevantConditions.length === 1) {
+        condition = relevantConditions[0];
+      } else {
+        condition = { type: 'AND', conditions: relevantConditions };
+      }
 
       let joinType = projection.hints?.joinType;
       if (!joinType) {
@@ -100,9 +137,27 @@ export class Planner {
       joinNode.condition = simplifyPredicate(joinNode.condition);
 
       root = joinNode;
+      joinedAliases.add(alias);
     }
 
-    // 5. Add Projection (Select)
+    // 5. Apply Residual Predicates (Filters)
+    if (residualPredicates.length > 0 || remainingJoinPredicates.length > 0) {
+      const allResiduals = [...residualPredicates, ...remainingJoinPredicates];
+      let filterCondition: Predicate;
+      if (allResiduals.length === 1) {
+        filterCondition = allResiduals[0];
+      } else {
+        filterCondition = { type: 'AND', conditions: allResiduals };
+      }
+
+      root = {
+        type: NodeType.FILTER,
+        source: root,
+        predicate: simplifyPredicate(filterCondition),
+      } as FilterNode;
+    }
+
+    // 6. Add Projection (Select)
     if (projection.select) {
       const fields: Record<string, any> = {};
       for (const [key, value] of Object.entries(projection.select as Record<string, any>)) {
@@ -158,34 +213,5 @@ export class Planner {
         value: new Literal(predicate.right, LiteralType.String), // Simplified
       });
     }
-  }
-
-  private extractPredicateForSource(predicate: Predicate, alias: string): Predicate | null {
-    // Recursively find conditions that ONLY refer to this alias
-    if (predicate.type === 'AND') {
-      const conditions = predicate.conditions
-        .map(c => this.extractPredicateForSource(c, alias))
-        .filter((c): c is Predicate => c !== null);
-
-      if (conditions.length === 0) return null;
-      if (conditions.length === 1) return conditions[0];
-      return { type: 'AND', conditions };
-    } else if (predicate.type === 'OR') {
-      const conditions = predicate.conditions
-        .map(c => this.extractPredicateForSource(c, alias))
-        .filter((c): c is Predicate => c !== null);
-
-      // For OR, if any branch doesn't apply to this alias, we can't push it down easily
-      // unless it's a full scan.
-      // But if ALL branches apply to this alias, we can keep it.
-      if (conditions.length !== predicate.conditions.length) return null;
-
-      return { type: 'OR', conditions };
-    } else if (predicate.type === 'COMPARISON') {
-      if (predicate.left.startsWith(alias + '.')) {
-        return predicate;
-      }
-    }
-    return null;
   }
 }

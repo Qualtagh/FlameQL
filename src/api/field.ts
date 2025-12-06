@@ -14,6 +14,8 @@ export interface Field extends FieldInput { }
 
 export class Field implements CollectionPathSegment {
   readonly kind = 'Field' as const;
+  source!: string | null;
+  path!: string[];
 
   constructor(source: string | null, path: string[]) {
     Object.assign(this, fieldSchema.parse({ source, path }));
