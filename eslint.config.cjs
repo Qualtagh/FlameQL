@@ -40,6 +40,7 @@ module.exports = [
     rules: {
       ...commonRules,
       '@typescript-eslint/no-deprecated': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
     },
   },
   {
