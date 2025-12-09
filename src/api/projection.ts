@@ -1,31 +1,38 @@
-import { z } from 'zod';
-import { Field, fieldSchema } from './field';
-import { queryHintsSchema } from './hints';
-import { orderBySchema } from './order-by';
-import { expressionSchema, predicateSchema } from './predicate';
+import { type as arkType } from 'arktype';
+import { Field, fieldType } from './field';
+import { queryHints } from './hints';
+import { orderBy } from './order-by';
+import { expressionType, predicateType } from './predicate';
 
-const projectionSchema = z.object({
-  id: z.string(),
-  from: z.record(z.string(), z.unknown()),
-  select: z.record(z.string(), expressionSchema).optional(),
-  where: predicateSchema.optional(),
-  params: z.record(z.string(), z.unknown()).optional(),
-  materializeTo: z.unknown().optional(),
-  key: fieldSchema.optional(),
-  uniqueBy: z.array(fieldSchema).optional(),
-  hints: queryHintsSchema.optional(),
-  orderBy: orderBySchema.optional(),
-  limit: z.number().int().nonnegative().optional(),
-  offset: z.number().int().nonnegative().optional(),
+const { projection: projectionType } = arkType.module({
+  field: fieldType,
+  expression: expressionType,
+  predicate: predicateType,
+  orderBy,
+  queryHints,
+  projection: {
+    id: 'string',
+    from: { '[string]': 'unknown' },
+    'select?': { '[string]': 'expression' },
+    'where?': 'predicate',
+    'params?': { '[string]': 'unknown' },
+    'materializeTo?': 'unknown',
+    'key?': 'field',
+    'uniqueBy?': 'field[]',
+    'hints?': 'queryHints',
+    'orderBy?': 'orderBy',
+    'limit?': 'number',
+    'offset?': 'number',
+  },
 });
 
-type ProjectionInput = z.infer<typeof projectionSchema>;
+type ProjectionInput = typeof projectionType.infer;
 
 export interface Projection extends ProjectionInput { }
 
 export class Projection {
   constructor(opts: ProjectionInput) {
-    const parsed = projectionSchema.parse(opts);
+    const parsed = projectionType.assert(opts);
     validateAliases(parsed);
     Object.assign(this, parsed);
   }

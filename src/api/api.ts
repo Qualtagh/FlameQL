@@ -4,4 +4,5 @@ export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode } from '.
 export { literal } from './literal';
 export { param } from './param';
 export { projection } from './projection';
-export { runQuery, RunQueryOptions } from './run-query';
+export { runQuery } from './run-query';
+export type { RunQueryOptions } from './run-query';

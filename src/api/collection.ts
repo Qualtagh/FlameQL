@@ -1,21 +1,24 @@
-import { z } from 'zod';
+import { type } from 'arktype';
+import type { CollectionPathSegment } from './collection-path-segment';
+import { collectionPathSegmentType } from './collection-path-segment';
 import { Field } from './field';
 import { Literal, LiteralType } from './literal';
 
-export interface CollectionPathSegment { }
-
-const collectionSchema = z.object({
-  group: z.boolean().optional(),
-  path: z.array(z.unknown()),
+const { collection: collectionType } = type.module({
+  collectionPathSegment: collectionPathSegmentType,
+  collection: {
+    group: 'boolean | undefined',
+    path: 'collectionPathSegment[]',
+  },
 });
 
-type CollectionInput = z.infer<typeof collectionSchema>;
+type CollectionInput = typeof collectionType.infer;
 
 export interface Collection extends CollectionInput { }
 
 export class Collection {
   constructor(opts: CollectionInput) {
-    Object.assign(this, collectionSchema.parse(opts));
+    Object.assign(this, collectionType.assert(opts));
   }
 }
 

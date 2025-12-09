@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { type } from 'arktype';
 
 export enum PredicateMode {
   Respect = 'respect',
@@ -25,9 +25,11 @@ export enum OrderByStrategy {
   Auto = 'auto',
 }
 
-export const queryHintsSchema = z.object({
-  predicateMode: z.enum(PredicateMode).optional(),
-  predicateOrMode: z.enum(PredicateOrMode).optional(),
-  join: z.enum(JoinStrategy).optional(),
-  orderBy: z.enum(OrderByStrategy).optional(),
+export const { queryHints } = type.module({
+  queryHints: {
+    'predicateMode?': type.valueOf(PredicateMode),
+    'predicateOrMode?': type.valueOf(PredicateOrMode),
+    'join?': type.valueOf(JoinStrategy),
+    'orderBy?': type.valueOf(OrderByStrategy),
+  },
 });

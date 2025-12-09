@@ -1,5 +1,4 @@
-import { z } from 'zod';
-import { CollectionPathSegment } from './collection';
+import { type } from 'arktype';
 
 export enum LiteralType {
   String = 'String',
@@ -8,19 +7,24 @@ export enum LiteralType {
   Null = 'Null',
 }
 
-export const literalSchema = z.object({
-  kind: z.literal('Literal').default('Literal'),
-  value: z.unknown(),
-  type: z.enum(LiteralType),
+export const { literal: literalType } = type.module({
+  literal: {
+    kind: "'Literal'",
+    value: 'string | number | boolean | null',
+    type: type.valueOf(LiteralType),
+  },
 });
 
-type LiteralInput = z.infer<typeof literalSchema>;
+export class Literal {
+  kind: 'Literal';
+  value: string | number | boolean | null;
+  type: LiteralType;
 
-export interface Literal extends LiteralInput { }
-
-export class Literal implements CollectionPathSegment {
   constructor(value: unknown, type: LiteralType) {
-    Object.assign(this, literalSchema.parse({ value, type }));
+    const parsed = literalType.assert({ kind: 'Literal', value, type });
+    this.kind = parsed.kind;
+    this.value = parsed.value;
+    this.type = parsed.type;
   }
 }
 

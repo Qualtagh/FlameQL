@@ -1,8 +1,10 @@
 export { Collection } from './collection';
 export { Field } from './field';
-export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode } from './hints';
+export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode, queryHints } from './hints';
 export { Literal, LiteralType } from './literal';
-export { OrderBySpec } from './order-by';
+export { orderBy, orderByEntry } from './order-by';
+export type { OrderByInput, OrderBySpec } from './order-by';
 export { Param } from './param';
+export { expressionType, predicateType } from './predicate';
 export type { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, NotPredicate, Predicate } from './predicate';
 export { Projection } from './projection';

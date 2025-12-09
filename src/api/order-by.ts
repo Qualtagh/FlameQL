@@ -1,16 +1,22 @@
 import { OrderByDirection } from '@google-cloud/firestore';
-import { z } from 'zod';
+import { type } from 'arktype';
+import { orderByDirectionType } from './external-types';
 import { Field } from './field';
 
-const orderByEntrySchema = z.union([
-  z.string(),
-  z.object({
-    field: z.string(),
-    direction: z.custom<OrderByDirection>(dir => typeof dir === 'string').optional(),
-  }),
-]);
+export const { orderByEntry, orderBy } = type.module({
+  orderByDirection: orderByDirectionType,
+  orderByEntry: type.or(
+    'string',
+    {
+      field: 'string',
+      'direction?': orderByDirectionType,
+    }
+  ),
+  orderBy: 'orderByEntry[]',
+});
 
-export const orderBySchema = z.array(orderByEntrySchema);
+export type OrderByEntry = typeof orderByEntry.infer;
+export type OrderByInput = typeof orderBy.infer;
 
 export interface OrderBySpec {
   field: Field;

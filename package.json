@@ -4,6 +4,10 @@
   "description": "FlameQL — Firestore query language",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.test.json --noEmit",
@@ -18,8 +22,8 @@
   "author": "",
   "license": "The Unlicense",
   "dependencies": {
-    "firebase-admin": "^13.6.0",
-    "zod": "^4.1.12"
+    "arktype": "^2.1.28",
+    "firebase-admin": "^13.6.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

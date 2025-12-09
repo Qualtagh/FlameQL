@@ -1,17 +1,21 @@
-import { z } from 'zod';
+import { type } from 'arktype';
 
-export const paramSchema = z.object({
-  kind: z.literal('Param').default('Param'),
-  name: z.string().min(1, 'Parameter name must be a non-empty string.'),
+export const { param: paramType } = type.module({
+  param: {
+    kind: "'Param'",
+    name: 'string > 0',
+  },
 });
 
-type ParamInput = z.infer<typeof paramSchema>;
+type ParamInput = typeof paramType.infer;
 
 export interface Param extends ParamInput { }
 
 export class Param {
   constructor(name: string) {
-    Object.assign(this, paramSchema.parse({ name }));
+    const parsed = paramType.assert({ kind: 'Param', name });
+    this.kind = parsed.kind;
+    this.name = parsed.name;
   }
 }
 

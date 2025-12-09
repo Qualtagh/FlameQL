@@ -1,19 +1,23 @@
-import { z } from 'zod';
-import { CollectionPathSegment } from './collection';
+import { type } from 'arktype';
 
-export const fieldSchema = z.object({
-  kind: z.literal('Field').default('Field'),
-  source: z.string(),
-  path: z.array(z.string()).min(1),
+export const { field: fieldType } = type.module({
+  field: {
+    kind: "'Field'",
+    source: 'string',
+    path: 'string[] > 0',
+  },
 });
 
-type FieldInput = z.infer<typeof fieldSchema>;
+type FieldInput = typeof fieldType.infer;
 
 export interface Field extends FieldInput { }
 
-export class Field implements CollectionPathSegment {
+export class Field {
   constructor(source: string, path: string[]) {
-    Object.assign(this, fieldSchema.parse({ source, path }));
+    const parsed = fieldType.assert({ kind: 'Field', source, path });
+    this.kind = parsed.kind;
+    this.source = parsed.source;
+    this.path = parsed.path;
   }
 }
 
