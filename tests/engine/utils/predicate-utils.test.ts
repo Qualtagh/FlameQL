@@ -1,26 +1,24 @@
-import { Predicate } from '../../../src/engine/ast';
+import { literal } from '../../../src/api/api';
+import { Predicate } from '../../../src/api/expression';
 import { simplifyPredicate, toDNF } from '../../../src/engine/utils/predicate-utils';
+
+const cmp = (left: any, right: any, operation: any = '==') => ({
+  type: 'COMPARISON',
+  left: literal(left),
+  right: literal(right),
+  operation,
+} as const);
 
 describe('Predicate Utilities', () => {
   describe('simplifyPredicate', () => {
     it('should unwrap single element AND', () => {
       const predicate: Predicate = {
         type: 'AND',
-        conditions: [{
-          type: 'COMPARISON',
-          left: 'a',
-          right: 'b',
-          operation: '==',
-        }],
+        conditions: [cmp('a', 'b')],
       };
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        left: 'a',
-        right: 'b',
-        operation: '==',
-      });
+      expect(result).toStrictEqual(cmp('a', 'b'));
     });
 
     it('should flatten nested AND', () => {
@@ -30,11 +28,11 @@ describe('Predicate Utilities', () => {
           {
             type: 'AND',
             conditions: [
-              { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
-              { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' },
+              cmp('a', 'b'),
+              cmp('c', 'd'),
             ],
           },
-          { type: 'COMPARISON', left: 'e', right: 'f', operation: '==' },
+          cmp('e', 'f'),
         ],
       };
 
@@ -42,9 +40,9 @@ describe('Predicate Utilities', () => {
       expect(result).toStrictEqual({
         type: 'AND',
         conditions: [
-          { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
-          { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' },
-          { type: 'COMPARISON', left: 'e', right: 'f', operation: '==' },
+          cmp('a', 'b'),
+          cmp('c', 'd'),
+          cmp('e', 'f'),
         ],
       });
     });
@@ -53,25 +51,20 @@ describe('Predicate Utilities', () => {
       const predicate: Predicate = {
         type: 'AND',
         conditions: [
-          { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
+          cmp('a', 'b'),
           { type: 'CONSTANT', value: true },
         ],
       };
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        left: 'a',
-        right: 'b',
-        operation: '==',
-      });
+      expect(result).toStrictEqual(cmp('a', 'b'));
     });
 
     it('should reduce AND with FALSE to FALSE', () => {
       const predicate: Predicate = {
         type: 'AND',
         conditions: [
-          { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
+          cmp('a', 'b'),
           { type: 'CONSTANT', value: false },
         ],
       };
@@ -86,8 +79,8 @@ describe('Predicate Utilities', () => {
         operand: {
           type: 'AND',
           conditions: [
-            { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
-            { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' },
+            cmp('a', 'b'),
+            cmp('c', 'd'),
           ],
         },
       };
@@ -96,8 +89,8 @@ describe('Predicate Utilities', () => {
       expect(result).toStrictEqual({
         type: 'OR',
         conditions: [
-          { type: 'NOT', operand: { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' } },
-          { type: 'NOT', operand: { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' } },
+          { type: 'NOT', operand: cmp('a', 'b') },
+          { type: 'NOT', operand: cmp('c', 'd') },
         ],
       });
     });
@@ -108,21 +101,13 @@ describe('Predicate Utilities', () => {
         operand: {
           type: 'NOT',
           operand: {
-            type: 'COMPARISON',
-            left: 'a',
-            right: 'b',
-            operation: '==',
+            ...cmp('a', 'b'),
           },
         },
       };
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        left: 'a',
-        right: 'b',
-        operation: '==',
-      });
+      expect(result).toStrictEqual(cmp('a', 'b'));
     });
   });
 
@@ -131,12 +116,12 @@ describe('Predicate Utilities', () => {
       const predicate: Predicate = {
         type: 'AND',
         conditions: [
-          { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
+          cmp('a', 'b'),
           {
             type: 'OR',
             conditions: [
-              { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' },
-              { type: 'COMPARISON', left: 'e', right: 'f', operation: '==' },
+              cmp('c', 'd'),
+              cmp('e', 'f'),
             ],
           },
         ],
@@ -148,14 +133,14 @@ describe('Predicate Utilities', () => {
         conditions: [
           {
             type: 'AND', conditions: [
-              { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
-              { type: 'COMPARISON', left: 'c', right: 'd', operation: '==' },
+              cmp('a', 'b'),
+              cmp('c', 'd'),
             ],
           },
           {
             type: 'AND', conditions: [
-              { type: 'COMPARISON', left: 'a', right: 'b', operation: '==' },
-              { type: 'COMPARISON', left: 'e', right: 'f', operation: '==' },
+              cmp('a', 'b'),
+              cmp('e', 'f'),
             ],
           },
         ],
@@ -163,10 +148,10 @@ describe('Predicate Utilities', () => {
     });
 
     it('multi-level AND/OR/NOTs should be simplified to OR of ANDs (max 3 levels)', () => {
-      const A = { type: 'COMPARISON', left: 'A', right: 'val', operation: '==' } as Predicate;
-      const B = { type: 'COMPARISON', left: 'B', right: 'val', operation: '==' } as Predicate;
-      const C = { type: 'COMPARISON', left: 'C', right: 'val', operation: '==' } as Predicate;
-      const D = { type: 'COMPARISON', left: 'D', right: 'val', operation: '==' } as Predicate;
+      const A = cmp('A', 'val') as Predicate;
+      const B = cmp('B', 'val') as Predicate;
+      const C = cmp('C', 'val') as Predicate;
+      const D = cmp('D', 'val') as Predicate;
 
       // deeply nested mix of AND/OR/NOT
       const predicate: Predicate = {
@@ -211,9 +196,9 @@ describe('Predicate Utilities', () => {
     });
 
     it('should simplify (A || B) && (A || !B || C) && !C to A', () => {
-      const A = { type: 'COMPARISON', left: 'A', right: 'val', operation: '==' } as Predicate;
-      const B = { type: 'COMPARISON', left: 'B', right: 'val', operation: '==' } as Predicate;
-      const C = { type: 'COMPARISON', left: 'C', right: 'val', operation: '==' } as Predicate;
+      const A = cmp('A', 'val') as Predicate;
+      const B = cmp('B', 'val') as Predicate;
+      const C = cmp('C', 'val') as Predicate;
 
       const expr: Predicate = {
         type: 'AND',

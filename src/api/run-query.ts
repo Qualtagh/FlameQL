@@ -38,7 +38,7 @@ export async function runQuery(
   options: RunQueryOptions
 ): Promise<any[]> {
   const planner = new Planner();
-  const plan = planner.plan(projection);
+  const plan = planner.plan(projection, options.parameters);
   const indexManager = new IndexManager();
   const executor = new Executor(options.db, indexManager);
   return executor.execute(plan);

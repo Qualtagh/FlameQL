@@ -1,6 +1,6 @@
-import { OrderByDirection } from '@google-cloud/firestore';
-import { ComparisonPredicate, JoinNode } from '../ast';
-import { getValueFromPath } from '../evaluator';
+import { ComparisonPredicate, Field } from '../../api/expression';
+import { JoinNode } from '../ast';
+import { getValueFromField } from '../evaluator';
 import { isHashJoinCompatible } from '../utils/operation-comparator';
 import { Operator, SortOrder } from './operator';
 
@@ -20,8 +20,8 @@ export class HashJoinOperator implements Operator {
   private currentLeftRow: any | null = null;
   private currentMatches: any[] | null = null;
   private matchIndex = 0;
-  private leftField: string;
-  private rightField: string;
+  private leftField: Field;
+  private rightField: Field;
   private operation: string;
 
   constructor(
@@ -36,8 +36,8 @@ export class HashJoinOperator implements Operator {
     }
     const condition = node.condition as ComparisonPredicate;
     this.operation = condition.operation;
-    this.leftField = condition.left;
-    this.rightField = condition.right;
+    this.leftField = this.ensureField(condition.left);
+    this.rightField = this.ensureField(condition.right);
   }
 
   async next(): Promise<any | null> {
@@ -55,7 +55,7 @@ export class HashJoinOperator implements Operator {
       this.currentLeftRow = await this.leftSource.next();
       if (!this.currentLeftRow) return null;
 
-      const leftValue = getValueFromPath(this.currentLeftRow, this.leftField);
+      const leftValue = getValueFromField(this.currentLeftRow, this.leftField);
       this.currentMatches = this.findMatches(leftValue);
       this.matchIndex = 0;
     }
@@ -64,10 +64,9 @@ export class HashJoinOperator implements Operator {
   private async buildHashTable() {
     let row;
     while (row = await this.rightSource.next()) {
-      const val = getValueFromPath(row, this.rightField);
+      const val = getValueFromField(row, this.rightField);
 
       if (val !== undefined && val !== null) {
-        // For 'in' and 'array-contains-any', the right value is an array, and we index each element
         if ((this.operation === 'in' || this.operation === 'array-contains-any') && Array.isArray(val)) {
           for (const element of val) {
             const key = String(element);
@@ -77,8 +76,6 @@ export class HashJoinOperator implements Operator {
             this.hashTable.get(key)!.push(row);
           }
         } else {
-          // For == and array-contains, index by the value itself
-          // Note: For 'array-contains', right side is a scalar value that we look up in left array
           const key = String(val);
           if (!this.hashTable.has(key)) {
             this.hashTable.set(key, []);
@@ -96,13 +93,13 @@ export class HashJoinOperator implements Operator {
 
     switch (this.operation) {
       case '==':
-      case 'in':
+      case 'in': {
         // For 'in', leftValue is a scalar, rightValue is an array
         // During buildHashTable, we indexed each element of the right array
         // Now we simply look up the scalar leftValue in the hash table
         const key = String(leftValue);
         return this.hashTable.get(key) || null;
-
+      }
       case 'array-contains':
       case 'array-contains-any':
         // Hash table indexed by right values, look up leftValue
@@ -118,7 +115,6 @@ export class HashJoinOperator implements Operator {
           return matches.size > 0 ? Array.from(matches) : null;
         }
         return null;
-
       default:
         return null;
     }
@@ -128,7 +124,10 @@ export class HashJoinOperator implements Operator {
     return undefined;
   }
 
-  requestSort(_field: string, _direction: OrderByDirection): boolean {
-    return false;
+  private ensureField(expr: any): Field {
+    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
+      return expr as Field;
+    }
+    throw new Error('Hash join requires Field operands.');
   }
 }

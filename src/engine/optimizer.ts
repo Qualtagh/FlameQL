@@ -1,46 +1,42 @@
-import { Field, Literal, LiteralType } from '../api/expression';
-import { Constraint, Predicate } from './ast';
+import { WhereFilterOp } from '@google-cloud/firestore';
+import { Field, OrderBySpec, Predicate } from '../api/expression';
+import { Constraint } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
 import { toDNF } from './utils/predicate-utils';
 
+export interface PlannedScan {
+  predicate: Predicate;
+  constraints: ConstraintWithScore;
+}
+
+export interface ConstraintWithScore {
+  constraints: Constraint[];
+  nonIndexable: number;
+}
+
 export interface OptimizationResult {
   strategy: 'SINGLE_SCAN' | 'UNION_SCAN';
-  scans: Predicate[]; // Each predicate represents the constraints for a single scan
+  scans: PlannedScan[];
+  score: number;
 }
 
 export class Optimizer {
   constructor(private indexManager: IndexManager) { }
 
-  optimize(predicate: Predicate, collectionPath: string, sortOrder?: SortOrder): OptimizationResult {
-    // 1. Try DNF strategy (Union of Scans)
+  optimize(predicate: Predicate, collectionPath: string, orderBy?: OrderBySpec[]): OptimizationResult {
     const dnfPredicate = toDNF(predicate);
-    const dnfScans = this.extractScansFromDNF(dnfPredicate);
-    // For DNF, we can only apply sort order if ALL scans support it?
-    // Or we do post-sort.
-    // For now, let's score DNF without sort preference, or maybe with?
-    // If we have sortOrder, and we do Union, we likely need to merge-sort the results.
-    // This requires each scan to be sorted.
-    const dnfScore = this.scoreScans(dnfScans, collectionPath, sortOrder);
+    const dnfPlans = this.extractScansFromDNF(dnfPredicate).map(p => this.buildPlan(p));
+    const singlePlan = this.buildPlan(predicate);
 
-    // 2. Try Single Scan strategy (CNF-like / Original)
-    const singleScanConstraints = this.extractTopLevelConstraints(predicate);
-    const singleScanScore = this.scoreScans([singleScanConstraints], collectionPath, sortOrder);
+    const dnfScore = this.scoreScans(dnfPlans, collectionPath, orderBy);
+    const singleScore = this.scoreScans([singlePlan], collectionPath, orderBy);
 
-    // 3. Compare
-    // Lower score is better.
-    // If scores are equal, prefer Single Scan (simpler).
-    if (dnfScore < singleScanScore) {
-      return {
-        strategy: 'UNION_SCAN',
-        scans: dnfScans,
-      };
-    } else {
-      return {
-        strategy: 'SINGLE_SCAN',
-        scans: [predicate],
-      };
+    if (dnfScore < singleScore) {
+      return { strategy: 'UNION_SCAN', scans: dnfPlans, score: dnfScore };
     }
+
+    return { strategy: 'SINGLE_SCAN', scans: [singlePlan], score: singleScore };
   }
 
   private extractScansFromDNF(predicate: Predicate): Predicate[] {
@@ -50,47 +46,45 @@ export class Optimizer {
     return [predicate];
   }
 
-  private extractTopLevelConstraints(predicate: Predicate): Predicate {
-    if (predicate.type === 'OR') {
-      return { type: 'CONSTANT', value: true };
-    }
-    return predicate;
-  }
-
-  private scoreScans(scans: Predicate[], collectionPath: string, sortOrder?: SortOrder): number {
-    let totalScore = 0;
-    for (const scan of scans) {
-      totalScore += this.scoreScan(scan, collectionPath, sortOrder);
-    }
-    return totalScore;
-  }
-
-  private scoreScan(predicate: Predicate, collectionPath: string, sortOrder?: SortOrder): number {
-    // Convert predicate to constraints
+  private buildPlan(predicate: Predicate): PlannedScan {
     const constraints: Constraint[] = [];
-    const nonIndexableCount = this.extractConstraints(predicate, constraints);
+    const nonIndexable = this.extractConstraints(predicate, constraints);
+    return { predicate, constraints: { constraints, nonIndexable } };
+  }
 
-    // Use IndexManager to find best match
-    const match = this.indexManager.match(collectionPath, constraints, sortOrder);
+  private scoreScans(scans: PlannedScan[], collectionPath: string, orderBy?: OrderBySpec[]): number {
+    let total = 0;
+    for (const scan of scans) {
+      total += this.scoreScan(scan, collectionPath, orderBy);
+    }
+    return total;
+  }
+
+  private scoreScan(plan: PlannedScan, collectionPath: string, orderBy?: OrderBySpec[]): number {
+    this.validateFirestoreGuardrails(plan.constraints.constraints, orderBy);
+    const sortOrder = this.toSortOrder(orderBy);
+    const match = this.indexManager.match(collectionPath, plan.constraints.constraints, sortOrder);
 
     let score = 0;
-
     if (match.type === 'exact') {
       score = 1;
     } else if (match.type === 'partial') {
-      score = 10 - match.matchedFields;
-      if (score < 1) score = 1;
-      score += 5;
+      score = Math.max(1, 10 - match.matchedFields) + 5;
     } else {
-      // No index match -> Full Scan
       score = 1000;
     }
 
-    // Penalize for non-indexable predicates (e.g., nested ORs)
-    // These require client-side filtering
-    score += nonIndexableCount * 100;
-
+    score += plan.constraints.nonIndexable * 100;
     return score;
+  }
+
+  private toSortOrder(orderBy?: OrderBySpec[]): SortOrder | undefined {
+    if (!orderBy || orderBy.length === 0) return undefined;
+    const primary = orderBy[0];
+    return {
+      field: primary.field.path.join('.'),
+      direction: primary.direction,
+    };
   }
 
   private extractConstraints(predicate: Predicate, constraints: Constraint[]): number {
@@ -100,22 +94,58 @@ export class Optimizer {
       for (const c of predicate.conditions) {
         nonIndexable += this.extractConstraints(c, constraints);
       }
-    } else if (predicate.type === 'COMPARISON') {
-      const parts = predicate.left.split('.');
-      const source = parts.length > 1 ? parts[0] : null;
-      const path = parts.length > 1 ? parts.slice(1) : parts;
-
-      constraints.push({
-        field: new Field(source, path),
-        op: predicate.operation,
-        value: new Literal(predicate.right, LiteralType.String),
-      });
-    } else if (predicate.type === 'OR' || predicate.type === 'NOT') {
-      // OR and NOT at this level cannot be pushed to Firestore index
-      nonIndexable = 1;
+      return nonIndexable;
     }
-    // CONSTANT is ignored
 
-    return nonIndexable;
+    if (predicate.type === 'COMPARISON') {
+      const field = this.asField(predicate.left);
+      const literal = predicate.right.kind === 'Literal' ? predicate.right : null;
+      if (field && literal) {
+        constraints.push({
+          field,
+          op: predicate.operation,
+          value: literal,
+        });
+      } else {
+        nonIndexable += 1;
+      }
+      return nonIndexable;
+    }
+
+    if (predicate.type === 'OR' || predicate.type === 'NOT') {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  private asField(expr: any): Field | null {
+    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
+      return expr as Field;
+    }
+    return null;
+  }
+
+  private validateFirestoreGuardrails(constraints: Constraint[], orderBy?: OrderBySpec[]) {
+    const inequalityOps = new Set<WhereFilterOp>(['<', '<=', '>', '>=', '!=', 'not-in']);
+    const inequalityFields = new Set<string>();
+
+    for (const c of constraints) {
+      if (inequalityOps.has(c.op)) {
+        inequalityFields.add(c.field.path.join('.'));
+      }
+    }
+
+    if (inequalityFields.size > 1) {
+      throw new Error(`Firestore allows at most one inequality field per query (found: ${Array.from(inequalityFields).join(', ')}).`);
+    }
+
+    if (inequalityFields.size === 1 && orderBy && orderBy.length > 0) {
+      const inequalityField = Array.from(inequalityFields)[0];
+      const orderField = orderBy[0].field.path.join('.');
+      if (orderField !== inequalityField) {
+        throw new Error('When using an inequality filter, the first orderBy field must match the inequality field.');
+      }
+    }
   }
 }

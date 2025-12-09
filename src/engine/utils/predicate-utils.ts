@@ -1,4 +1,4 @@
-import { ComparisonPredicate, CompositePredicate, ConstantPredicate, NotPredicate, Predicate } from '../ast';
+import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
 
 /**
  * Simplifies a predicate by applying logical rules:
@@ -268,20 +268,47 @@ export function predicatesEqual(a: Predicate, b: Predicate): boolean {
   switch (a.type) {
     case 'CONSTANT':
       return (b as ConstantPredicate).value === a.value;
-
-    case 'COMPARISON':
+    case 'COMPARISON': {
       const bComp = b as ComparisonPredicate;
-      return a.left === bComp.left &&
-        a.right === bComp.right &&
+      return expressionsEqual(a.left, bComp.left) &&
+        expressionsEqual(a.right, bComp.right) &&
         a.operation === bComp.operation;
-
+    }
     case 'NOT':
       return predicatesEqual(a.operand, (b as NotPredicate).operand);
-
     case 'AND':
-    case 'OR':
+    case 'OR': {
       const bComposite = b as CompositePredicate;
       if (a.conditions.length !== bComposite.conditions.length) return false;
       return a.conditions.every((c, i) => predicatesEqual(c, bComposite.conditions[i]));
+    }
   }
+}
+
+function expressionsEqual(a: Expression, b: Expression): boolean {
+  if (a === b) return true;
+  if (a.kind !== b.kind) return false;
+
+  switch (a.kind) {
+    case 'Field': {
+      const fieldA = a;
+      const fieldB = b as Field;
+      return fieldA.source === fieldB.source && arrayEquals(fieldA.path, fieldB.path);
+    }
+    case 'Literal': {
+      const litA = a;
+      const litB = b as Literal;
+      return litA.type === litB.type && litA.value === litB.value;
+    }
+    case 'Param': {
+      const paramA = a;
+      const paramB = b as Param;
+      return paramA.name === paramB.name;
+    }
+  }
+}
+
+function arrayEquals(left: unknown[], right: unknown[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, idx) => value === right[idx]);
 }

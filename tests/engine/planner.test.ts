@@ -1,4 +1,5 @@
-import { collection, JoinType, projection } from '../../src/api/api';
+import { collection, field, projection } from '../../src/api/api';
+import { JoinStrategy } from '../../src/api/hints';
 import { JoinNode, NodeType, ProjectNode, ScanNode } from '../../src/engine/ast';
 import { Planner } from '../../src/engine/planner';
 
@@ -7,7 +8,7 @@ describe('Planner', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs') },
-      select: { id: 'j.#id' },
+      select: { id: field('j.#id') },
     });
 
     const planner = new Planner();
@@ -22,7 +23,7 @@ describe('Planner', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { id: 'j.#id' },
+      select: { id: field('j.#id') },
     });
 
     const planner = new Planner();
@@ -30,20 +31,41 @@ describe('Planner', () => {
 
     expect(plan.type).toBe(NodeType.PROJECT);
     expect(plan.source.type).toBe(NodeType.JOIN);
-    expect((plan.source as JoinNode).joinType).toBe(JoinType.NestedLoop);
+    expect((plan.source as JoinNode).joinType).toBe(JoinStrategy.NestedLoop);
   });
 
   test('should respect join hints', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { id: 'j.#id' },
-      hints: { joinType: JoinType.Hash },
+      select: { id: field('j.#id') },
+      where: { type: 'COMPARISON', left: field('j.#id'), right: field('s.jobId'), operation: '==' },
+      hints: { join: JoinStrategy.Hash },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
 
-    expect((plan.source as JoinNode).joinType).toBe(JoinType.Hash);
+    expect((plan.source as JoinNode).joinType).toBe(JoinStrategy.Hash);
+  });
+
+  test('applies sort and limit', () => {
+    const p = projection({
+      id: 'sorted',
+      from: { j: collection('jobs') },
+      select: { id: field('j.#id') },
+      orderBy: ['j.title'],
+      limit: 5,
+      offset: 2,
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p);
+
+    expect(plan.type).toBe(NodeType.LIMIT);
+    const limitNode = plan as any;
+    expect(limitNode.limit).toBe(5);
+    expect(limitNode.offset).toBe(2);
+    expect(limitNode.source.type).toBe(NodeType.SORT);
   });
 });

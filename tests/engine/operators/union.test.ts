@@ -1,4 +1,4 @@
-import { NodeType, ScanNode, UnionNode } from '../../../src/engine/ast';
+import { NodeType, ScanNode, UnionDistinctStrategy, UnionNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { clearDatabase, db } from '../../setup';
 
@@ -36,7 +36,7 @@ describe('Union Operator', () => {
       const unionPlan: UnionNode = {
         type: NodeType.UNION,
         inputs: [scan1, scan2],
-        deduplicateByDocPath: true,
+        distinct: UnionDistinctStrategy.DocPath,
       };
 
       const results = await executor.execute(unionPlan);
@@ -66,7 +66,7 @@ describe('Union Operator', () => {
       const unionPlan: UnionNode = {
         type: NodeType.UNION,
         inputs: [scan1, scan2],
-        distinct: true,
+        distinct: UnionDistinctStrategy.HashMap,
       };
 
       const results = await executor.execute(unionPlan);
@@ -95,7 +95,7 @@ describe('Union Operator', () => {
       const unionPlan: UnionNode = {
         type: NodeType.UNION,
         inputs: [scan1, scan2],
-        distinct: true,
+        distinct: UnionDistinctStrategy.HashMap,
       };
 
       const results = await executor.execute(unionPlan);
@@ -124,7 +124,7 @@ describe('Union Operator', () => {
       const unionPlan: UnionNode = {
         type: NodeType.UNION,
         inputs: [scan1, scan2],
-        // No distinct or deduplicateByDocPath = UNION ALL
+        distinct: UnionDistinctStrategy.None,
       };
 
       const results = await executor.execute(unionPlan);

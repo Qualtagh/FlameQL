@@ -1,4 +1,4 @@
-import { collection, projection, runQuery } from '../../src/api/api';
+import { collection, field, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -15,7 +15,7 @@ describe('runQuery API', () => {
     const p = projection({
       id: 'test-query',
       from: { u: collection('users') },
-      select: { userName: 'u.name', userRole: 'u.role' },
+      select: { userName: field('u.name'), userRole: field('u.role') },
     });
 
     const results = await runQuery(p, { db });
@@ -39,9 +39,9 @@ describe('runQuery API', () => {
       id: 'test-join',
       from: { c: collection('customers'), o: collection('orders') },
       select: {
-        customerName: 'c.name',
-        orderId: 'o.orderId',
-        orderTotal: 'o.total',
+        customerName: field('c.name'),
+        orderId: field('o.orderId'),
+        orderTotal: field('o.total'),
       },
     });
 
@@ -72,9 +72,9 @@ describe('runQuery API', () => {
       id: 'test-nested',
       from: { p: collection('products') },
       select: {
-        productName: 'p.name',
-        priceValue: 'p.price.value',
-        currency: 'p.price.currency',
+        productName: field('p.name'),
+        priceValue: field('p.price.value'),
+        currency: field('p.price.currency'),
       },
     });
 
@@ -91,5 +91,22 @@ describe('runQuery API', () => {
       priceValue: 30,
       currency: 'EUR',
     });
+  });
+
+  it('substitutes params and errors on missing values', async () => {
+    await db.collection('users').doc('u1').set({ id: 'u1', name: 'Alice' });
+    await db.collection('users').doc('u2').set({ id: 'u2', name: 'Bob' });
+
+    const p = projection({
+      id: 'param-query',
+      from: { u: collection('users') },
+      select: { userName: field('u.name') },
+      where: { type: 'COMPARISON', left: field('u.id'), right: param('userId'), operation: '==' },
+    });
+
+    const results = await runQuery(p, { db, parameters: { userId: 'u1' } });
+    expect(results).toEqual([{ userName: 'Alice' }]);
+
+    await expect(runQuery(p, { db, parameters: {} as any })).rejects.toThrow('Parameter "userId" was not provided.');
   });
 });

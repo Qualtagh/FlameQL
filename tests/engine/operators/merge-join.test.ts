@@ -1,6 +1,5 @@
-import { collection } from '../../../src/api/collection';
-import { JoinType } from '../../../src/api/hints';
-import { projection } from '../../../src/api/projection';
+import { collection, field, projection } from '../../../src/api/api';
+import { JoinStrategy } from '../../../src/api/hints';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
@@ -24,7 +23,7 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
@@ -32,11 +31,11 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     // Force Merge Join and set condition
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -62,18 +61,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -91,18 +90,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -123,18 +122,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -155,18 +154,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -188,18 +187,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { p: collection('products'), i: collection('inventory') },
-      select: { pName: 'p.name', iQty: 'i.qty' },
+      select: { pName: field('p.name'), iQty: field('i.qty') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'p.code',
-      right: 'i.productCode',
+      left: field('p.code'),
+      right: field('i.productCode'),
       operation: '==',
     };
 
@@ -214,18 +213,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: 'array-contains',
     };
 
@@ -249,18 +248,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+      select: { uId: field('u.id'), uVal: field('u.val'), oUserId: field('o.userId'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '<',
     };
 
@@ -291,18 +290,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+      select: { uId: field('u.id'), uVal: field('u.val'), oUserId: field('o.userId'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '<=',
     };
 
@@ -331,18 +330,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+      select: { uId: field('u.id'), uVal: field('u.val'), oUserId: field('o.userId'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '>',
     };
 
@@ -373,18 +372,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+      select: { uId: field('u.id'), uVal: field('u.val'), oUserId: field('o.userId'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '>=',
     };
 
@@ -412,18 +411,18 @@ describe('MergeJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uId: 'u.id', uVal: 'u.val', oUserId: 'o.userId', oOther: 'o.other' },
+      select: { uId: field('u.id'), uVal: field('u.val'), oUserId: field('o.userId'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Merge;
+    joinNode.joinType = JoinStrategy.Merge;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '>',
     };
 

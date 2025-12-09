@@ -1,6 +1,5 @@
-import { collection } from '../../../src/api/collection';
-import { JoinType } from '../../../src/api/hints';
-import { projection } from '../../../src/api/projection';
+import { collection, field, projection } from '../../../src/api/api';
+import { JoinStrategy } from '../../../src/api/hints';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
@@ -23,7 +22,7 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
@@ -31,11 +30,11 @@ describe('NestedLoopJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     // Force NestedLoop Join
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.#id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -59,18 +58,18 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { s: collection('scores'), t: collection('thresholds') },
-      select: { sVal: 's.val', tLimit: 't.limit' },
+      select: { sVal: field('s.val'), tLimit: field('t.limit') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 's.val',
-      right: 't.limit',
+      left: field('s.val'),
+      right: field('t.limit'),
       operation: '>',
     };
 
@@ -96,18 +95,18 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { p: collection('posts'), s: collection('searches') },
-      select: { pTags: 'p.tags', sTag: 's.tag' },
+      select: { pTags: field('p.tags'), sTag: field('s.tag') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'p.tags',
-      right: 's.tag',
+      left: field('p.tags'),
+      right: field('s.tag'),
       operation: 'array-contains',
     };
 
@@ -128,18 +127,18 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { i: collection('items'), f: collection('filters') },
-      select: { iTags: 'i.tags', fOptions: 'f.options' },
+      select: { iTags: field('i.tags'), fOptions: field('f.options') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'i.tags',
-      right: 'f.options',
+      left: field('i.tags'),
+      right: field('f.options'),
       operation: 'array-contains-any',
     };
 
@@ -160,18 +159,18 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { t: collection('tasks'), r: collection('rules') },
-      select: { tStatus: 't.status', rAllowed: 'r.allowed' },
+      select: { tStatus: field('t.status'), rAllowed: field('r.allowed') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 't.status',
-      right: 'r.allowed',
+      left: field('t.status'),
+      right: field('r.allowed'),
       operation: 'in',
     };
 
@@ -193,18 +192,18 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { p: collection('products'), r: collection('currencyRates') },
-      select: { pPrice: 'p.price', rRate: 'r.rate' },
+      select: { pPrice: field('p.price'), rRate: field('r.rate') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'p.price.currency',
-      right: 'r.code',
+      left: field('p.price.currency'),
+      right: field('r.code'),
       operation: '==',
     };
 
@@ -232,14 +231,14 @@ describe('NestedLoopJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), l: collection('logs') },
-      select: { uId: 'u.id', lAction: 'l.action' },
+      select: { uId: field('u.id'), lAction: field('l.action') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.NestedLoop;
+    joinNode.joinType = JoinStrategy.NestedLoop;
 
     // Join users and logs where:
     // (u.id == l.userId) AND (u.role == l.action)
@@ -253,14 +252,14 @@ describe('NestedLoopJoinOperator', () => {
       conditions: [
         {
           type: 'COMPARISON',
-          left: 'u.id',
-          right: 'l.userId',
+          left: field('u.#id'),
+          right: field('l.userId'),
           operation: '==',
         },
         {
           type: 'COMPARISON',
-          left: 'u.role',
-          right: 'l.action',
+          left: field('u.role'),
+          right: field('l.action'),
           operation: '==',
         },
       ],

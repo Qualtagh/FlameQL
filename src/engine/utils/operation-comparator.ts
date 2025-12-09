@@ -1,5 +1,5 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
-import { Predicate } from '../ast';
+import { Predicate } from '../../api/expression';
 
 /**
  * Converts a WhereFilterOp into a binary comparison callback function.

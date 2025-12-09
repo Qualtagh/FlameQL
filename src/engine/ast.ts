@@ -1,5 +1,5 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
-import { Field, JoinType, Literal } from '../api/expression';
+import { Expression, Field, JoinStrategy, Literal, OrderBySpec, Predicate } from '../api/expression';
 
 export enum NodeType {
   SCAN = 'SCAN',
@@ -8,18 +8,12 @@ export enum NodeType {
   JOIN = 'JOIN',
   AGGREGATE = 'AGGREGATE',
   UNION = 'UNION',
+  SORT = 'SORT',
+  LIMIT = 'LIMIT',
 }
 
 export interface ExecutionNode {
   type: NodeType;
-}
-
-export interface ScanNode extends ExecutionNode {
-  type: NodeType.SCAN;
-  collectionPath: string;
-  alias: string;
-  // Predicates pushed down to Firestore
-  constraints: Constraint[];
 }
 
 export interface Constraint {
@@ -28,62 +22,66 @@ export interface Constraint {
   value: Literal;
 }
 
+export interface ScanNode extends ExecutionNode {
+  type: NodeType.SCAN;
+  collectionPath: string;
+  collectionGroup?: boolean;
+  alias: string;
+  constraints: Constraint[];
+  orderBy?: OrderBySpec[];
+  limit?: number;
+  offset?: number;
+}
+
 export interface FilterNode extends ExecutionNode {
   type: NodeType.FILTER;
   source: ExecutionNode;
-  predicate: any; // TODO: Define Predicate AST
+  predicate: Predicate;
 }
 
 export interface ProjectNode extends ExecutionNode {
   type: NodeType.PROJECT;
   source: ExecutionNode;
-  fields: Record<string, any>; // TODO: Define Expression AST
+  fields: Record<string, Expression>;
 }
 
 export interface JoinNode extends ExecutionNode {
   type: NodeType.JOIN;
   left: ExecutionNode;
   right: ExecutionNode;
-  joinType: JoinType;
+  joinType: JoinStrategy;
   condition: Predicate;
-}
-
-export type Predicate = ComparisonPredicate | CompositePredicate | NotPredicate | ConstantPredicate;
-
-export interface ComparisonPredicate {
-  type: 'COMPARISON';
-  left: string;
-  right: string;
-  operation: WhereFilterOp;
-}
-
-export interface CompositePredicate {
-  type: 'AND' | 'OR';
-  conditions: Predicate[];
-}
-
-export interface NotPredicate {
-  type: 'NOT';
-  operand: Predicate;
-}
-
-export interface ConstantPredicate {
-  type: 'CONSTANT';
-  value: boolean;
+  crossProduct?: boolean;
 }
 
 export interface AggregateNode extends ExecutionNode {
   type: NodeType.AGGREGATE;
   source: ExecutionNode;
   groupBy: Field[];
-  aggregates: Record<string, any>; // TODO: Define Aggregate Function
+  aggregates: Record<string, Expression>;
+}
+
+export enum UnionDistinctStrategy {
+  None = 'none',
+  DocPath = 'doc_path',
+  HashMap = 'hash_map',
 }
 
 export interface UnionNode extends ExecutionNode {
   type: NodeType.UNION;
   inputs: ExecutionNode[];
-  /** SQL-style DISTINCT: deduplicate by comparing all fields (uses hashing + equality) */
-  distinct?: boolean;
-  /** Optimizer-safe: deduplicate by DOC_PATH only. Only safe when all inputs scan same fields. */
-  deduplicateByDocPath?: boolean;
+  distinct: UnionDistinctStrategy;
+}
+
+export interface SortNode extends ExecutionNode {
+  type: NodeType.SORT;
+  source: ExecutionNode;
+  orderBy: OrderBySpec[];
+}
+
+export interface LimitNode extends ExecutionNode {
+  type: NodeType.LIMIT;
+  source: ExecutionNode;
+  limit: number;
+  offset?: number;
 }

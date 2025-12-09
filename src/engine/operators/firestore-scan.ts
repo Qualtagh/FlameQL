@@ -1,4 +1,3 @@
-import { OrderByDirection } from '@google-cloud/firestore';
 import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
 import { IndexManager } from '../indexes/index-manager';
@@ -18,25 +17,39 @@ export class FirestoreScan implements Operator {
 
   async next(): Promise<any | null> {
     if (!this.snapshot) {
-      let query: admin.firestore.Query = this.db.collection(this.node.collectionPath);
+      let query: admin.firestore.Query = this.node.collectionGroup
+        ? this.db.collectionGroup(this.node.collectionPath)
+        : this.db.collection(this.node.collectionPath);
 
       // Apply constraints
       for (const constraint of this.node.constraints) {
-        // TODO: Handle field paths correctly
         const fieldPath = constraint.field.path.join('.');
         query = query.where(fieldPath, constraint.op, constraint.value.value);
       }
 
-      // Apply sort if requested
-      if (this.sortOrder) {
-        query = query.orderBy(this.stripAliasPrefix(this.sortOrder.field), this.sortOrder.direction);
+      if (this.node.orderBy && this.node.orderBy.length > 0) {
+        for (const spec of this.node.orderBy) {
+          query = query.orderBy(spec.field.path.join('.'), spec.direction);
+        }
+        this.sortOrder = {
+          field: this.node.orderBy[0].field.path.join('.'),
+          direction: this.node.orderBy[0].direction,
+        };
+      }
+
+      if (this.node.offset !== undefined && this.node.offset > 0) {
+        query = query.offset(this.node.offset);
+      }
+
+      if (this.node.limit !== undefined && this.node.limit !== Infinity) {
+        query = query.limit(this.node.limit);
       }
 
       this.snapshot = await query.get();
     }
 
-    if (this.index < this.snapshot!.docs.length) {
-      const doc = this.snapshot!.docs[this.index++];
+    if (this.index < this.snapshot.docs.length) {
+      const doc = this.snapshot.docs[this.index++];
       const docData = {
         ...createMetadata(doc.ref.path),
         ...doc.data(),
@@ -49,26 +62,6 @@ export class FirestoreScan implements Operator {
 
   getSortOrder(): SortOrder | undefined {
     return this.sortOrder;
-  }
-
-  requestSort(field: string, direction: OrderByDirection): boolean {
-    if (this.snapshot) {
-      // Cannot change sort order after execution started
-      return false;
-    }
-
-    // TODO: Validate with IndexManager if provided
-    // For now, assume single-field sort is always possible
-    this.sortOrder = { field, direction };
-    return true;
-  }
-
-  private stripAliasPrefix(field: string): string {
-    // Strip alias prefix if present (e.g., 'u.id' -> 'id')
-    const aliasPrefix = `${this.node.alias}.`;
-    return field.startsWith(aliasPrefix)
-      ? field.substring(aliasPrefix.length)
-      : field;
   }
 }
 

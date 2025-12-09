@@ -1,6 +1,5 @@
-import { collection } from '../../../src/api/collection';
-import { JoinType } from '../../../src/api/hints';
-import { projection } from '../../../src/api/projection';
+import { collection, field, projection } from '../../../src/api/api';
+import { JoinStrategy } from '../../../src/api/hints';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
@@ -24,7 +23,7 @@ describe('HashJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { u: collection('users'), o: collection('orders') },
-      select: { uVal: 'u.val', oOther: 'o.other' },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
     });
 
     const planner = new Planner();
@@ -32,11 +31,11 @@ describe('HashJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     // Force Hash Join and set condition
-    joinNode.joinType = JoinType.Hash;
+    joinNode.joinType = JoinStrategy.Hash;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'u.id',
-      right: 'o.userId',
+      left: field('u.id'),
+      right: field('o.userId'),
       operation: '==',
     };
 
@@ -66,18 +65,18 @@ describe('HashJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { p: collection('posts'), s: collection('searches') },
-      select: { pTags: 'p.tags', sTag: 's.tag' },
+      select: { pTags: field('p.tags'), sTag: field('s.tag') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Hash;
+    joinNode.joinType = JoinStrategy.Hash;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'p.tags',
-      right: 's.tag',
+      left: field('p.tags'),
+      right: field('s.tag'),
       operation: 'array-contains',
     };
 
@@ -101,18 +100,18 @@ describe('HashJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { i: collection('items'), f: collection('filters') },
-      select: { iTags: 'i.tags', fOptions: 'f.options' },
+      select: { iTags: field('i.tags'), fOptions: field('f.options') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Hash;
+    joinNode.joinType = JoinStrategy.Hash;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'i.tags',
-      right: 'f.options',
+      left: field('i.tags'),
+      right: field('f.options'),
       operation: 'array-contains-any',
     };
 
@@ -134,18 +133,18 @@ describe('HashJoinOperator', () => {
     const p = projection({
       id: 'test',
       from: { t: collection('things'), f: collection('filters2') },
-      select: { tTag: 't.tag', fOptions: 'f.options' },
+      select: { tTag: field('t.tag'), fOptions: field('f.options') },
     });
 
     const planner = new Planner();
     const plan = planner.plan(p) as ProjectNode;
     const joinNode = plan.source as JoinNode;
 
-    joinNode.joinType = JoinType.Hash;
+    joinNode.joinType = JoinStrategy.Hash;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 't.tag',
-      right: 'f.options',
+      left: field('t.tag'),
+      right: field('f.options'),
       operation: 'in',
     };
 

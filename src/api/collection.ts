@@ -26,7 +26,7 @@ function parseSegment(seg: string): CollectionPathSegment {
   }
   const inside = braceMatch[1];
   const parts = inside.split('.');
-  const source = parts.shift() || null;
+  const source = parts.shift()!;
   return new Field(source, parts);
 }
 

@@ -1,4 +1,5 @@
-import { Predicate } from './ast';
+import { Expression, Field, Predicate } from '../api/expression';
+import { simplifyPredicate } from './utils/predicate-utils';
 
 export interface SplitPredicates {
   sourcePredicates: Record<string, Predicate>;
@@ -8,7 +9,8 @@ export interface SplitPredicates {
 
 export class PredicateSplitter {
   split(predicate: Predicate, sources: string[]): SplitPredicates {
-    const conjuncts = this.getConjuncts(predicate);
+    const normalized = simplifyPredicate(predicate);
+    const conjuncts = this.getConjuncts(normalized);
 
     const result: SplitPredicates = {
       sourcePredicates: {},
@@ -17,14 +19,16 @@ export class PredicateSplitter {
     };
 
     for (const conjunct of conjuncts) {
-      const involvedSources = this.getInvolvedSources(conjunct, sources);
+      const involvedSources = Array.from(this.getInvolvedSources(conjunct, sources));
 
       if (involvedSources.length === 0) {
-        // Constant or unknown. Treat as residual if not TRUE.
         if (conjunct.type !== 'CONSTANT' || conjunct.value !== true) {
           result.residualPredicates.push(conjunct);
         }
-      } else if (involvedSources.length === 1) {
+        continue;
+      }
+
+      if (involvedSources.length === 1) {
         const source = involvedSources[0];
         const existing = result.sourcePredicates[source];
         if (existing) {
@@ -32,10 +36,15 @@ export class PredicateSplitter {
         } else {
           result.sourcePredicates[source] = conjunct;
         }
-      } else {
-        // Involves multiple sources -> Join condition or Residual
-        result.joinPredicates.push(conjunct);
+        continue;
       }
+
+      if (involvedSources.length === 2) {
+        result.joinPredicates.push(conjunct);
+        continue;
+      }
+
+      result.residualPredicates.push(conjunct);
     }
 
     return result;
@@ -48,38 +57,42 @@ export class PredicateSplitter {
     return [predicate];
   }
 
-  public getInvolvedSources(predicate: Predicate, sources: string[]): string[] {
+  public getInvolvedSources(predicate: Predicate, sources: string[]): Set<string> {
     const involved = new Set<string>();
     this.collectSources(predicate, sources, involved);
-    return Array.from(involved);
+    return involved;
   }
 
   private collectSources(predicate: Predicate, sources: string[], involved: Set<string>) {
     if (predicate.type === 'COMPARISON') {
-      this.checkField(predicate.left, sources, involved);
-      // Check right side if it's a field?
-      // Currently AST assumes right is literal, but for joins it might be field.
-      // If right is string and looks like field path?
-      // The current AST definition says right is 'any'.
-      // But typically for joins we might have a special structure or just string.
-      // If it's a string, we check if it matches an alias.
-      if (typeof predicate.right === 'string') {
-        this.checkField(predicate.right, sources, involved);
-      }
-    } else if (predicate.type === 'AND' || predicate.type === 'OR') {
-      for (const condition of predicate.conditions) {
-        this.collectSources(condition, sources, involved);
-      }
-    } else if (predicate.type === 'NOT') {
+      this.collectFromExpression(predicate.left, sources, involved);
+      this.collectFromExpression(predicate.right, sources, involved);
+      return;
+    }
+
+    if (predicate.type === 'AND' || predicate.type === 'OR') {
+      predicate.conditions.forEach(cond => this.collectSources(cond, sources, involved));
+      return;
+    }
+
+    if (predicate.type === 'NOT') {
       this.collectSources(predicate.operand, sources, involved);
     }
   }
 
-  private checkField(fieldPath: string, sources: string[], involved: Set<string>) {
-    const parts = fieldPath.split('.');
-    const potentialAlias = parts[0];
-    if (sources.includes(potentialAlias)) {
-      involved.add(potentialAlias);
+  private collectFromExpression(expr: Expression, sources: string[], involved: Set<string>) {
+    if (expr.kind === 'Field') {
+      this.assertKnownAlias(expr, sources);
+      if (expr.source) {
+        involved.add(expr.source);
+      }
+      return;
+    }
+  }
+
+  private assertKnownAlias(ref: Field, sources: string[]) {
+    if (!ref.source || !sources.includes(ref.source)) {
+      throw new Error(`Unknown alias "${ref.source}" referenced in predicate.`);
     }
   }
 }

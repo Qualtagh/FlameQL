@@ -1,7 +1,5 @@
-import { OrderByDirection } from '@google-cloud/firestore';
 import { JoinNode } from '../ast';
-import { getValueFromPath } from '../evaluator';
-import { createOperationComparator } from '../utils/operation-comparator';
+import { evaluatePredicate } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
 /**
@@ -45,8 +43,9 @@ export class NestedLoopJoinOperator implements Operator {
       while (this.rightIndex < this.rightBuffer.length) {
         const rightRow = this.rightBuffer[this.rightIndex++];
 
-        if (this.evaluatePredicate(this.node.condition, this.currentLeftRow, rightRow)) {
-          return { ...this.currentLeftRow, ...rightRow };
+        const combinedRow = { ...this.currentLeftRow, ...rightRow };
+        if (evaluatePredicate(this.node.condition, combinedRow)) {
+          return combinedRow;
         }
       }
 
@@ -54,29 +53,7 @@ export class NestedLoopJoinOperator implements Operator {
     }
   }
 
-  private evaluatePredicate(predicate: any, leftRow: any, rightRow: any): boolean {
-    if (predicate.type === 'COMPARISON') {
-      const leftValue = getValueFromPath(leftRow, predicate.left);
-      const rightValue = getValueFromPath(rightRow, predicate.right);
-      const comparator = createOperationComparator(predicate.operation);
-      return comparator(leftValue, rightValue);
-    } else if (predicate.type === 'AND') {
-      return predicate.conditions.every((c: any) => this.evaluatePredicate(c, leftRow, rightRow));
-    } else if (predicate.type === 'OR') {
-      return predicate.conditions.some((c: any) => this.evaluatePredicate(c, leftRow, rightRow));
-    } else if (predicate.type === 'NOT') {
-      return !this.evaluatePredicate(predicate.operand, leftRow, rightRow);
-    } else if (predicate.type === 'CONSTANT') {
-      return predicate.value;
-    }
-    throw new Error(`Unknown predicate type: ${predicate.type}`);
-  }
-
   getSortOrder(): SortOrder | undefined {
     return undefined;
-  }
-
-  requestSort(_field: string, _direction: OrderByDirection): boolean {
-    return false;
   }
 }

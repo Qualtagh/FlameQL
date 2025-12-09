@@ -1,8 +1,11 @@
-import { Field } from '../../../src/api/field';
-import { Literal, LiteralType } from '../../../src/api/literal';
+import { field, literal } from '../../../src/api/api';
+import { Field, Literal } from '../../../src/api/expression';
 import { Constraint } from '../../../src/engine/ast';
 import { IndexManager } from '../../../src/engine/indexes/index-manager';
 import { SortOrder } from '../../../src/engine/operators/operator';
+
+const eq = (a: Field, b: Literal): Constraint => ({ field: a, op: '==', value: b });
+const gt = (a: Field, b: Literal): Constraint => ({ field: a, op: '>', value: b });
 
 describe('IndexManager', () => {
   let indexManager: IndexManager;
@@ -87,14 +90,8 @@ describe('IndexManager', () => {
       });
     });
 
-    const createConstraint = (field: string, op: any, value: any): Constraint => ({
-      field: new Field('u', [field]),
-      op,
-      value: new Literal(value, LiteralType.String),
-    });
-
     it('should match exact single field equality', () => {
-      const constraints = [createConstraint('name', '==', 'Alice')];
+      const constraints = [eq(field('u.name'), literal('Alice'))];
       const match = indexManager.match('users', constraints);
 
       expect(match.type).toBe('exact');
@@ -103,8 +100,8 @@ describe('IndexManager', () => {
 
     it('should match composite index', () => {
       const constraints = [
-        createConstraint('status', '==', 'active'),
-        createConstraint('age', '>', 20),
+        eq(field('u.status'), literal('active')),
+        gt(field('u.age'), literal(20)),
       ];
       // Note: Firestore requires equality fields first, then inequality.
       // Our index is (status ASC, age DESC).
@@ -118,7 +115,7 @@ describe('IndexManager', () => {
     });
 
     it('should match sort order', () => {
-      const constraints = [createConstraint('status', '==', 'active')];
+      const constraints = [eq(field('u.status'), literal('active'))];
       const sort: SortOrder = { field: 'age', direction: 'desc' };
 
       const match = indexManager.match('users', constraints, sort);
@@ -128,7 +125,7 @@ describe('IndexManager', () => {
     });
 
     it('should return partial match if sort is not covered', () => {
-      const constraints = [createConstraint('status', '==', 'active')];
+      const constraints = [eq(field('u.status'), literal('active'))];
       const sort: SortOrder = { field: 'name', direction: 'asc' };
 
       // We have index on status, but not (status, name).
@@ -144,7 +141,7 @@ describe('IndexManager', () => {
     });
 
     it('should return none if no index matches constraints', () => {
-      const constraints = [createConstraint('missingField', '==', 'value')];
+      const constraints = [eq(field('u.missingField'), literal('value'))];
       const match = indexManager.match('users', constraints);
       expect(match.type).toBe('none');
     });

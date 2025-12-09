@@ -1,8 +1,8 @@
 import * as admin from 'firebase-admin';
-import { JoinType } from '../api/hints';
-import { AggregateNode, ExecutionNode, FilterNode, JoinNode, NodeType, ProjectNode, ScanNode, UnionNode } from './ast';
+import { JoinStrategy } from '../api/hints';
+import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
-import { Aggregate, Filter, FirestoreScan, HashJoinOperator, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project } from './operators/operators';
+import { Aggregate, Filter, FirestoreScan, HashJoinOperator, Limit, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project, Sort } from './operators/operators';
 import { Union } from './operators/union';
 
 export class Executor {
@@ -30,15 +30,20 @@ export class Executor {
         const left = this.buildOperatorTree(joinNode.left);
         const right = this.buildOperatorTree(joinNode.right);
         const hint = joinNode.joinType;
+        if (joinNode.crossProduct) {
+          console.warn('FlameQL: executing cross-product join (no predicate provided).');
+        }
         switch (hint) {
-          case JoinType.Hash:
+          case JoinStrategy.Hash:
             return new HashJoinOperator(left, right, joinNode);
-          case JoinType.Merge:
+          case JoinStrategy.Merge:
             return new MergeJoinOperator(left, right, joinNode);
-          case JoinType.NestedLoop:
+          case JoinStrategy.NestedLoop:
             return new NestedLoopJoinOperator(left, right, joinNode);
-          case JoinType.IndexNestedLoop:
+          case JoinStrategy.IndexedNestedLoop:
             throw new Error('IndexNestedLoop join type has not been implemented yet');
+          case JoinStrategy.Auto:
+            throw new Error('Auto join should have been resolved by the planner');
           default:
             hint satisfies never;
         }
@@ -64,8 +69,19 @@ export class Executor {
         const unionNode = node as UnionNode;
         return new Union(
           unionNode.inputs.map(input => this.buildOperatorTree(input)),
-          unionNode.distinct,
-          unionNode.deduplicateByDocPath
+          unionNode.distinct
+        );
+      case NodeType.SORT:
+        const sortNode = node as SortNode;
+        return new Sort(
+          this.buildOperatorTree(sortNode.source),
+          sortNode
+        );
+      case NodeType.LIMIT:
+        const limitNode = node as LimitNode;
+        return new Limit(
+          this.buildOperatorTree(limitNode.source),
+          limitNode
         );
       default:
         node.type satisfies never;

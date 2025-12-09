@@ -1,5 +1,5 @@
-import { OrderByDirection } from '@google-cloud/firestore';
 import { AggregateNode } from '../ast';
+import { getValueFromField } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
 export class Aggregate implements Operator {
@@ -32,18 +32,15 @@ export class Aggregate implements Operator {
   }
 
   private getGroupKey(row: any): string {
-    return this.node.groupBy.map(field => {
-      // Simple field access for now
-      // TODO: Use evaluator
-      return row[field.source!]?.[field.path[0]] || '';
-    }).join('_');
+    return this.node.groupBy
+      .map(field => {
+        const value = getValueFromField(row, field);
+        return value === undefined || value === null ? '' : String(value);
+      })
+      .join('_');
   }
 
   getSortOrder(): SortOrder | undefined {
     return undefined;
-  }
-
-  requestSort(_field: string, _direction: OrderByDirection): boolean {
-    return false;
   }
 }

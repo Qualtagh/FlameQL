@@ -1,4 +1,3 @@
-import { OrderByDirection } from '@google-cloud/firestore';
 import { ProjectNode } from '../ast';
 import { evaluate } from '../evaluator';
 import { Operator, SortOrder } from './operator';
@@ -22,9 +21,5 @@ export class Project implements Operator {
 
   getSortOrder(): SortOrder | undefined {
     return this.source.getSortOrder();
-  }
-
-  requestSort(field: string, direction: OrderByDirection): boolean {
-    return this.source.requestSort(field, direction);
   }
 }

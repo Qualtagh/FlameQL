@@ -1,6 +1,6 @@
-import { OrderByDirection } from '@google-cloud/firestore';
-import { ComparisonPredicate, JoinNode } from '../ast';
-import { getValueFromPath } from '../evaluator';
+import { ComparisonPredicate, Field } from '../../api/expression';
+import { JoinNode } from '../ast';
+import { getValueFromField } from '../evaluator';
 import { isMergeJoinCompatible } from '../utils/operation-comparator';
 import { Operator, SortOrder } from './operator';
 
@@ -25,18 +25,15 @@ export class MergeJoinOperator implements Operator {
   // idxGt: index of first element where rightValue > leftValue
   private idxGe = 0;
   private idxGt = 0;
-
   private currentLeftMatches: any[] = [];
 
   // Range of matching indices in rightBuffer [start, end)
   private rightMatchStart = 0;
   private rightMatchEnd = 0;
-
   private matchLeftIndex = 0;
   private matchRightIndex = 0;
-
-  private leftField: string;
-  private rightField: string;
+  private leftField: Field;
+  private rightField: Field;
   private operation: string;
 
   constructor(
@@ -51,8 +48,8 @@ export class MergeJoinOperator implements Operator {
     }
     const condition = node.condition as ComparisonPredicate;
     this.operation = condition.operation;
-    this.leftField = condition.left;
-    this.rightField = condition.right;
+    this.leftField = this.ensureField(condition.left);
+    this.rightField = this.ensureField(condition.right);
   }
 
   async next(): Promise<any | null> {
@@ -85,55 +82,40 @@ export class MergeJoinOperator implements Operator {
   getSortOrder(): SortOrder | undefined {
     // MergeJoin produces output sorted by the join keys (ASC)
     // We can report it as sorted by the left field
-    return { field: this.leftField, direction: 'asc' };
-  }
-
-  requestSort(field: string, direction: OrderByDirection): boolean {
-    // We can only satisfy sort requests on the join key
-    if (field === this.leftField && direction === 'asc') {
-      return true;
-    }
-    return false;
+    return { field: `${this.leftField.source}.${this.leftField.path.join('.')}`, direction: 'asc' };
   }
 
   private async buildSortedBuffers() {
-    // Try to request sort from sources
-    this.leftSource.requestSort(this.leftField, 'asc');
-    this.rightSource.requestSort(this.rightField, 'asc');
-
-    // Load left collection
     let row;
     while (row = await this.leftSource.next()) {
       this.leftBuffer.push(row);
     }
-
-    // Load right collection
     while (row = await this.rightSource.next()) {
       this.rightBuffer.push(row);
     }
 
-    // Check if left is already sorted
     const leftSort = this.leftSource.getSortOrder();
-    const leftSorted = leftSort && leftSort.field === this.leftField && leftSort.direction === 'asc';
+    const expectedLeftField = `${this.leftField.source}.${this.leftField.path.join('.')}`;
+    const leftSorted = leftSort && leftSort.field === expectedLeftField && leftSort.direction === 'asc';
 
     if (!leftSorted) {
       this.leftBuffer.sort((a, b) =>
         this.compareValues(
-          getValueFromPath(a, this.leftField),
-          getValueFromPath(b, this.leftField)
+          getValueFromField(a, this.leftField),
+          getValueFromField(b, this.leftField)
         )
       );
     }
 
-    // Check if right is already sorted
     const rightSort = this.rightSource.getSortOrder();
-    const rightSorted = rightSort && rightSort.field === this.rightField && rightSort.direction === 'asc';
+    const expectedRightField = `${this.rightField.source}.${this.rightField.path.join('.')}`;
+    const rightSorted = rightSort && rightSort.field === expectedRightField && rightSort.direction === 'asc';
 
     if (!rightSorted) {
       this.rightBuffer.sort((a, b) =>
         this.compareValues(
-          getValueFromPath(a, this.rightField),
-          getValueFromPath(b, this.rightField)
+          getValueFromField(a, this.rightField),
+          getValueFromField(b, this.rightField)
         )
       );
     }
@@ -148,12 +130,12 @@ export class MergeJoinOperator implements Operator {
       return false;
     }
 
-    const leftValue = getValueFromPath(this.leftBuffer[this.leftIndex], this.leftField);
+    const leftValue = getValueFromField(this.leftBuffer[this.leftIndex], this.leftField);
 
     // Collect all left rows with this same value (handle duplicates)
     while (
       this.leftIndex < this.leftBuffer.length &&
-      this.compareValues(getValueFromPath(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
+      this.compareValues(getValueFromField(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
     ) {
       this.currentLeftMatches.push(this.leftBuffer[this.leftIndex]);
       this.leftIndex++;
@@ -161,7 +143,7 @@ export class MergeJoinOperator implements Operator {
 
     // Update idxGe: find first right element >= leftValue
     while (this.idxGe < this.rightBuffer.length) {
-      const rightValue = getValueFromPath(this.rightBuffer[this.idxGe], this.rightField);
+      const rightValue = getValueFromField(this.rightBuffer[this.idxGe], this.rightField);
       if (this.compareValues(rightValue, leftValue) >= 0) {
         break;
       }
@@ -174,7 +156,7 @@ export class MergeJoinOperator implements Operator {
       this.idxGt = this.idxGe;
     }
     while (this.idxGt < this.rightBuffer.length) {
-      const rightValue = getValueFromPath(this.rightBuffer[this.idxGt], this.rightField);
+      const rightValue = getValueFromField(this.rightBuffer[this.idxGt], this.rightField);
       if (this.compareValues(rightValue, leftValue) > 0) {
         break;
       }
@@ -188,25 +170,21 @@ export class MergeJoinOperator implements Operator {
         this.rightMatchStart = this.idxGe;
         this.rightMatchEnd = this.idxGt;
         break;
-
       case '<':
         // left < right <=> right > left => [idxGt, end)
         this.rightMatchStart = this.idxGt;
         this.rightMatchEnd = this.rightBuffer.length;
         break;
-
       case '<=':
         // left <= right <=> right >= left => [idxGe, end)
         this.rightMatchStart = this.idxGe;
         this.rightMatchEnd = this.rightBuffer.length;
         break;
-
       case '>':
         // left > right <=> right < left => [0, idxGe)
         this.rightMatchStart = 0;
         this.rightMatchEnd = this.idxGe;
         break;
-
       case '>=':
         // left >= right <=> right <= left => [0, idxGt)
         this.rightMatchStart = 0;
@@ -225,7 +203,6 @@ export class MergeJoinOperator implements Operator {
   }
 
   private compareValues(a: any, b: any): number {
-    // Handle null/undefined
     if (a === null || a === undefined) {
       if (b === null || b === undefined) return 0;
       return -1;
@@ -237,5 +214,12 @@ export class MergeJoinOperator implements Operator {
     if (a < b) return -1;
     if (a > b) return 1;
     return 0;
+  }
+
+  private ensureField(expr: any): Field {
+    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
+      return expr as Field;
+    }
+    throw new Error('Merge join requires Field operands.');
   }
 }

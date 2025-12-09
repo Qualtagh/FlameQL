@@ -1,5 +1,4 @@
-import { collection } from '../../src/api/collection';
-import { projection } from '../../src/api/projection';
+import { collection, field, projection } from '../../src/api/api';
 import { JoinNode, ProjectNode } from '../../src/engine/ast';
 import { Executor } from '../../src/engine/executor';
 import { Planner } from '../../src/engine/planner';
@@ -17,7 +16,7 @@ describe('Executor', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs') },
-      select: { id: 'j.#id', title: 'j.title' },
+      select: { id: field('j.#id'), title: field('j.title') },
     });
 
     const planner = new Planner();
@@ -41,8 +40,8 @@ describe('Executor', () => {
       id: 'test_nested',
       from: { p: collection('products') },
       select: {
-        price: 'p.details.price',
-        tags: 'p.tags.name',
+        price: field('p.details.price'),
+        tags: field('p.tags.name'),
       },
     });
 
@@ -86,7 +85,7 @@ describe('Executor', () => {
     const p = projection({
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
-      select: { jobId: 'j.#id', jobTitle: 'j.title', shiftDate: 's.date' },
+      select: { jobId: field('j.#id'), jobTitle: field('j.title'), shiftDate: field('s.date') },
     });
 
     const planner = new Planner();
@@ -96,8 +95,8 @@ describe('Executor', () => {
     const joinNode = plan.source as JoinNode;
     joinNode.condition = {
       type: 'COMPARISON',
-      left: 'j.#id',
-      right: 's.jobId',
+      left: field('j.#id'),
+      right: field('s.jobId'),
       operation: '==',
     };
 

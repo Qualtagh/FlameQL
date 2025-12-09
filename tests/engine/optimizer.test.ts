@@ -1,4 +1,5 @@
-import { Predicate } from '../../src/engine/ast';
+import { field, literal } from '../../src/api/api';
+import { Predicate } from '../../src/api/expression';
 import { IndexManager } from '../../src/engine/indexes/index-manager';
 import { Optimizer } from '../../src/engine/optimizer';
 
@@ -30,8 +31,8 @@ describe('Optimizer', () => {
     const predicate: Predicate = {
       type: 'AND',
       conditions: [
-        { type: 'COMPARISON', left: 'age', operation: '==', right: '25' },
-        { type: 'COMPARISON', left: 'city', operation: '==', right: 'NY' },
+        { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
+        { type: 'COMPARISON', left: field('u.city'), operation: '==', right: literal('NY') },
       ],
     };
 
@@ -49,15 +50,15 @@ describe('Optimizer', () => {
         {
           type: 'AND',
           conditions: [
-            { type: 'COMPARISON', left: 'age', operation: '==', right: '25' },
-            { type: 'COMPARISON', left: 'city', operation: '==', right: 'NY' },
+            { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
+            { type: 'COMPARISON', left: field('u.city'), operation: '==', right: literal('NY') },
           ],
         },
         {
           type: 'AND',
           conditions: [
-            { type: 'COMPARISON', left: 'status', operation: '==', right: 'active' },
-            { type: 'COMPARISON', left: 'role', operation: '==', right: 'admin' },
+            { type: 'COMPARISON', left: field('u.status'), operation: '==', right: literal('active') },
+            { type: 'COMPARISON', left: field('u.role'), operation: '==', right: literal('admin') },
           ],
         },
       ],
@@ -72,7 +73,7 @@ describe('Optimizer', () => {
   test('should fallback to single scan (full scan) if no index matches', () => {
     // name == 'John' (no index on name)
     const predicate: Predicate = {
-      type: 'COMPARISON', left: 'name', operation: '==', right: 'John',
+      type: 'COMPARISON', left: field('u.name'), operation: '==', right: literal('John'),
     };
 
     const result = optimizer.optimize(predicate, 'users');
@@ -88,12 +89,12 @@ describe('Optimizer', () => {
     const predicate: Predicate = {
       type: 'AND',
       conditions: [
-        { type: 'COMPARISON', left: 'age', operation: '==', right: '25' },
+        { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
         {
           type: 'OR',
           conditions: [
-            { type: 'COMPARISON', left: 'city', operation: '==', right: 'NY' },
-            { type: 'COMPARISON', left: 'city', operation: '==', right: 'LA' },
+            { type: 'COMPARISON', left: field('u.city'), operation: '==', right: literal('NY') },
+            { type: 'COMPARISON', left: field('u.city'), operation: '==', right: literal('LA') },
           ],
         },
       ],

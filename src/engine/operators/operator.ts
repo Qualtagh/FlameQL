@@ -12,10 +12,4 @@ export interface Operator {
    * Returns the current sort order of the data stream, if any.
    */
   getSortOrder(): SortOrder | undefined;
-
-  /**
-   * Requests the operator to sort its output by the given field.
-   * Returns true if the operator can satisfy the request.
-   */
-  requestSort(field: string, direction: OrderByDirection): boolean;
 }

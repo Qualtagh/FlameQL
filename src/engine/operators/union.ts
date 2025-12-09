@@ -1,32 +1,23 @@
-import { OrderByDirection } from '@google-cloud/firestore';
+import { UnionDistinctStrategy } from '../ast';
 import { DOC_PATH } from '../symbols';
 import { Operator, SortOrder } from './operator';
 
 /**
  * Union operator that combines results from multiple input operators.
  *
- * Supports two deduplication modes:
- * - `distinct`: SQL semantics - compares all field values using serialization
- * - `deduplicateByDocPath`: Uses DOC_PATH for identity (optimizer-safe only, when all inputs scan same fields)
- *
- * UNION ALL (no deduplication) is the default when both flags are false.
+ * Supports deduplication strategies defined by UnionDistinctStrategy.
  */
 export class Union implements Operator {
   private inputs: Operator[];
-  private distinct: boolean;
-  private deduplicateByDocPath: boolean;
+  private strategy: UnionDistinctStrategy;
   private currentInputIndex: number = 0;
 
-  // For deduplicateByDocPath mode: track seen DOC_PATH values
   private seenPaths: Set<string> = new Set();
-
-  // For distinct mode: track seen row serializations
   private seenRows: Set<string> = new Set();
 
-  constructor(inputs: Operator[], distinct: boolean = false, deduplicateByDocPath: boolean = false) {
+  constructor(inputs: Operator[], strategy: UnionDistinctStrategy = UnionDistinctStrategy.None) {
     this.inputs = inputs;
-    this.distinct = distinct;
-    this.deduplicateByDocPath = deduplicateByDocPath;
+    this.strategy = strategy;
   }
 
   async next(): Promise<any | null> {
@@ -40,22 +31,7 @@ export class Union implements Operator {
         continue;
       }
 
-      // Check for duplicates based on mode
-      if (this.deduplicateByDocPath) {
-        const path = this.extractDocPath(row);
-        if (path && this.seenPaths.has(path)) {
-          continue; // Duplicate by DOC_PATH
-        }
-        if (path) {
-          this.seenPaths.add(path);
-        }
-      } else if (this.distinct) {
-        const key = this.serializeRow(row);
-        if (this.seenRows.has(key)) {
-          continue; // Duplicate by content
-        }
-        this.seenRows.add(key);
-      }
+      if (this.isDuplicate(row)) continue;
 
       return row;
     }
@@ -116,7 +92,24 @@ export class Union implements Operator {
     return undefined;
   }
 
-  requestSort(_field: string, _direction: OrderByDirection): boolean {
-    return false;
+  private isDuplicate(row: any): boolean {
+    switch (this.strategy) {
+      case UnionDistinctStrategy.DocPath: {
+        const path = this.extractDocPath(row);
+        if (!path) return false;
+        if (this.seenPaths.has(path)) return true;
+        this.seenPaths.add(path);
+        return false;
+      }
+      case UnionDistinctStrategy.HashMap: {
+        const key = this.serializeRow(row);
+        if (this.seenRows.has(key)) return true;
+        this.seenRows.add(key);
+        return false;
+      }
+      case UnionDistinctStrategy.None:
+      default:
+        return false;
+    }
   }
 }
