@@ -60,10 +60,11 @@ describe('Planner', () => {
     });
 
     const planner = new Planner();
-    const plan = planner.plan(p);
+    const plan = planner.plan(p) as ProjectNode;
 
-    expect(plan.type).toBe(NodeType.LIMIT);
-    const limitNode = plan as any;
+    expect(plan.type).toBe(NodeType.PROJECT);
+    const limitNode = plan.source as any;
+    expect(limitNode.type).toBe(NodeType.LIMIT);
     expect(limitNode.limit).toBe(5);
     expect(limitNode.offset).toBe(2);
     expect(limitNode.source.type).toBe(NodeType.SORT);

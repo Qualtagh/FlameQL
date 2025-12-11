@@ -1,3 +1,4 @@
+import { WhereFilterOp } from '@google-cloud/firestore';
 import { type } from 'arktype';
 import { whereFilterOpType } from './external-types';
 import { fieldType } from './field';
@@ -41,3 +42,47 @@ export type ComparisonPredicate = Extract<Predicate, { type: 'COMPARISON' }>;
 export type CompositePredicate = Extract<Predicate, { type: 'AND' | 'OR' }>;
 export type NotPredicate = Extract<Predicate, { type: 'NOT' }>;
 export type ConstantPredicate = Extract<Predicate, { type: 'CONSTANT' }>;
+
+export function eq(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('==', left, right);
+}
+
+export function ne(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('!=', left, right);
+}
+
+export function lt(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('<', left, right);
+}
+
+export function lte(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('<=', left, right);
+}
+
+export function gt(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('>', left, right);
+}
+
+export function gte(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('>=', left, right);
+}
+
+export function and(conditions: Predicate[]): CompositePredicate {
+  return { type: 'AND', conditions };
+}
+
+export function or(conditions: Predicate[]): CompositePredicate {
+  return { type: 'OR', conditions };
+}
+
+export function not(operand: Predicate): NotPredicate {
+  return { type: 'NOT', operand };
+}
+
+export function constant(value: boolean): ConstantPredicate {
+  return { type: 'CONSTANT', value };
+}
+
+function comparison(operation: WhereFilterOp, left: Expression, right: Expression): ComparisonPredicate {
+  return { type: 'COMPARISON', operation, left, right };
+}

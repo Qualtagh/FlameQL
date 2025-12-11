@@ -31,7 +31,7 @@ export class Executor {
         const right = this.buildOperatorTree(joinNode.right);
         const hint = joinNode.joinType;
         if (joinNode.crossProduct) {
-          console.warn('FlameQL: executing cross-product join (no predicate provided).');
+          console.log('FlameQL: executing cross-product join (no predicate provided).');
         }
         switch (hint) {
           case JoinStrategy.Hash:

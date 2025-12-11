@@ -57,8 +57,8 @@ export class Planner {
     );
 
     const withResiduals = this.applyResidualFilters(rootJoin, split.residualPredicates);
-    const withProjection = this.applyProjection(withResiduals, projection.select as Record<string, any> | undefined, aliases);
-    const planned = this.applySortAndLimit(withProjection, orderSpecs, projection.limit, projection.offset);
+    const withSortAndLimit = this.applySortAndLimit(withResiduals, orderSpecs, projection.limit, projection.offset);
+    const planned = this.applyProjection(withSortAndLimit, projection.select as Record<string, any> | undefined, aliases);
     this.params = undefined;
     return planned;
   }
@@ -86,9 +86,12 @@ export class Planner {
 
         costs[alias] = optimization.score;
         if (optimization.strategy === 'UNION_SCAN') {
-          const inputs = optimization.scans.map(scan =>
-            this.createScanNode(alias, path, collectionGroup, scan.constraints.constraints)
-          );
+          const inputs = optimization.scans.map(scan => {
+            const base = this.createScanNode(alias, path, collectionGroup, scan.constraints.constraints);
+            return scan.constraints.nonIndexable > 0
+              ? this.wrapFilter(base, scan.predicate)
+              : base;
+          });
           scans[alias] = {
             type: NodeType.UNION,
             inputs,
@@ -96,7 +99,10 @@ export class Planner {
           } as UnionNode;
         } else {
           const plan = optimization.scans[0];
-          scans[alias] = this.createScanNode(alias, path, collectionGroup, plan.constraints.constraints);
+          const base = this.createScanNode(alias, path, collectionGroup, plan.constraints.constraints);
+          scans[alias] = plan.constraints.nonIndexable > 0
+            ? this.wrapFilter(base, plan.predicate)
+            : base;
         }
       } else {
         costs[alias] = Infinity;
@@ -319,6 +325,14 @@ export class Planner {
       alias,
       constraints,
     };
+  }
+
+  private wrapFilter(source: ExecutionNode, predicate: Predicate): ExecutionNode {
+    return {
+      type: NodeType.FILTER,
+      source,
+      predicate: simplifyPredicate(predicate),
+    } as FilterNode;
   }
 
   private toExpression(value: any, aliases: Set<string>): Expression {

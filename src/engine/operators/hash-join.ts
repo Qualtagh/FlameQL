@@ -23,6 +23,9 @@ export class HashJoinOperator implements Operator {
   private leftField: Field;
   private rightField: Field;
   private operation: string;
+  private buildField: Field;
+  private probeField: Field;
+  private oriented = false;
 
   constructor(
     private leftSource: Operator,
@@ -38,6 +41,8 @@ export class HashJoinOperator implements Operator {
     this.operation = condition.operation;
     this.leftField = this.ensureField(condition.left);
     this.rightField = this.ensureField(condition.right);
+    this.buildField = this.rightField;
+    this.probeField = this.leftField;
   }
 
   async next(): Promise<any | null> {
@@ -55,7 +60,7 @@ export class HashJoinOperator implements Operator {
       this.currentLeftRow = await this.leftSource.next();
       if (!this.currentLeftRow) return null;
 
-      const leftValue = getValueFromField(this.currentLeftRow, this.leftField);
+      const leftValue = getValueFromField(this.currentLeftRow, this.probeField);
       this.currentMatches = this.findMatches(leftValue);
       this.matchIndex = 0;
     }
@@ -64,7 +69,10 @@ export class HashJoinOperator implements Operator {
   private async buildHashTable() {
     let row;
     while (row = await this.rightSource.next()) {
-      const val = getValueFromField(row, this.rightField);
+      if (!this.oriented) {
+        this.orientFields(row);
+      }
+      const val = getValueFromField(row, this.buildField);
 
       if (val !== undefined && val !== null) {
         if ((this.operation === 'in' || this.operation === 'array-contains-any') && Array.isArray(val)) {
@@ -122,6 +130,25 @@ export class HashJoinOperator implements Operator {
 
   getSortOrder(): SortOrder | undefined {
     return undefined;
+  }
+
+  private orientFields(sample: any) {
+    const rightHasRightField = this.hasSource(sample, this.rightField);
+    const rightHasLeftField = this.hasSource(sample, this.leftField);
+
+    if (rightHasRightField) {
+      this.buildField = this.rightField;
+      this.probeField = this.leftField;
+    } else if (rightHasLeftField) {
+      this.buildField = this.leftField;
+      this.probeField = this.rightField;
+    }
+
+    this.oriented = true;
+  }
+
+  private hasSource(row: any, field: Field): boolean {
+    return row && field.source in row;
   }
 
   private ensureField(expr: any): Field {

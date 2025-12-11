@@ -63,7 +63,7 @@ describe('Planner guardrails', () => {
     const planner = new Planner();
     const plan = planner.plan(p);
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+    const warnSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
     const executor = new Executor(db);
     await executor.execute(plan);
     expect(warnSpy).toHaveBeenCalled();
