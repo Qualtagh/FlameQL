@@ -1,4 +1,6 @@
-import { NodeType, ScanNode, UnionDistinctStrategy, UnionNode } from '../../../src/engine/ast';
+import { field } from '../../../src/api/api';
+import { JoinStrategy } from '../../../src/api/hints';
+import { JoinNode, NodeType, ScanNode, UnionDistinctStrategy, UnionNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { clearDatabase, db } from '../../setup';
 
@@ -43,6 +45,55 @@ describe('Union Operator', () => {
 
       // 4 unique users (deduplicated by DOC_PATH)
       expect(results.length).toBe(4);
+    });
+
+    test('should not collapse distinct join rows that share a left-side DOC_PATH', async () => {
+      // Seed joinable data: two orders for the same user (same user DOC_PATH, different order DOC_PATH)
+      await db.collection('orders').doc('o1').set({ userId: 'user1', item: 'x' });
+      await db.collection('orders').doc('o2').set({ userId: 'user1', item: 'y' });
+      await db.collection('orders').doc('o3').set({ userId: 'user2', item: 'z' });
+
+      const usersScan: ScanNode = {
+        type: NodeType.SCAN,
+        collectionPath: 'users',
+        alias: 'u',
+        constraints: [],
+      };
+
+      const ordersScan: ScanNode = {
+        type: NodeType.SCAN,
+        collectionPath: 'orders',
+        alias: 'o',
+        constraints: [],
+      };
+
+      const join: JoinNode = {
+        type: NodeType.JOIN,
+        left: usersScan,
+        right: ordersScan,
+        joinType: JoinStrategy.Hash,
+        condition: {
+          type: 'COMPARISON',
+          left: field('u.#id'),
+          right: field('o.userId'),
+          operation: '==',
+        },
+      };
+
+      // Duplicate the join subtree so every join row is produced twice.
+      const unionPlan: UnionNode = {
+        type: NodeType.UNION,
+        inputs: [join, join],
+        distinct: UnionDistinctStrategy.DocPath,
+      };
+
+      const results = await executor.execute(unionPlan);
+
+      // Expected join cardinality:
+      // user1 joins o1, o2 (2 rows); user2 joins o3 (1 row) => 3 rows total
+      // UNION with doc-path-based dedupe should remove duplicates across inputs, but must keep
+      // both rows for user1 (they differ by order DOC_PATH).
+      expect(results.length).toBe(3);
     });
   });
 

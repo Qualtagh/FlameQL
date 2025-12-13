@@ -73,19 +73,37 @@ export class Union implements Operator {
   }
 
   /**
-   * Extracts DOC_PATH from row, handling both flat and aliased structures.
+   * Extracts a stable doc-path-based deduplication key from a row.
+   *
+   * For scan results, the row is typically `{ alias: docData }`.
+   * For join results, the row is typically `{ a: docA, b: docB, ... }`.
+   *
+   * We dedupe by the **full tuple** of doc paths present in the row so that
+   * join rows that share the same left-side document but differ on the right
+   * are not incorrectly treated as duplicates.
    */
-  private extractDocPath(row: any): string | undefined {
-    if (row[DOC_PATH]) {
-      return row[DOC_PATH];
+  private extractDocPathKey(row: any): string | undefined {
+    if (!row || typeof row !== 'object') return undefined;
+
+    const pairs: Array<[string, string]> = [];
+
+    // Flat doc row (defensive; current engine typically uses aliased rows)
+    const top = row[DOC_PATH];
+    if (typeof top === 'string') {
+      pairs.push(['__root__', top]);
     }
-    for (const key of Object.keys(row)) {
+
+    // Aliased structure: `{ alias: docData }`
+    for (const key of Object.keys(row).sort()) {
       const nested = row[key];
-      if (nested && typeof nested === 'object' && nested[DOC_PATH]) {
-        return nested[DOC_PATH];
+      const path = nested && typeof nested === 'object' ? nested[DOC_PATH] : undefined;
+      if (typeof path === 'string') {
+        pairs.push([key, path]);
       }
     }
-    return undefined;
+
+    if (pairs.length === 0) return undefined;
+    return pairs.map(([k, p]) => `${k}:${p}`).join('|');
   }
 
   getSortOrder(): SortOrder | undefined {
@@ -95,10 +113,10 @@ export class Union implements Operator {
   private isDuplicate(row: any): boolean {
     switch (this.strategy) {
       case UnionDistinctStrategy.DocPath: {
-        const path = this.extractDocPath(row);
-        if (!path) return false;
-        if (this.seenPaths.has(path)) return true;
-        this.seenPaths.add(path);
+        const key = this.extractDocPathKey(row);
+        if (!key) return false;
+        if (this.seenPaths.has(key)) return true;
+        this.seenPaths.add(key);
         return false;
       }
       case UnionDistinctStrategy.HashMap: {

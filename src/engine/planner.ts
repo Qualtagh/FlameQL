@@ -1,6 +1,6 @@
 import { literal } from '../api/api';
 import { Collection, Expression, Field, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
-import { JoinStrategy } from '../api/hints';
+import { JoinStrategy, PredicateMode, PredicateOrMode } from '../api/hints';
 import {
   Constraint,
   ExecutionNode,
@@ -15,19 +15,19 @@ import {
   UnionNode,
 } from './ast';
 import { IndexManager } from './indexes/index-manager';
-import { Optimizer } from './optimizer';
+import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
 import { isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
-import { simplifyPredicate } from './utils/predicate-utils';
+import { simplifyPredicate, toDNF } from './utils/predicate-utils';
 
 export class Planner {
+  private indexManager: IndexManager;
   private predicateSplitter: PredicateSplitter;
-  private optimizer: Optimizer;
   private params?: Record<string, any>;
 
   constructor(indexManager: IndexManager = new IndexManager()) {
+    this.indexManager = indexManager;
     this.predicateSplitter = new PredicateSplitter();
-    this.optimizer = new Optimizer(indexManager);
   }
 
   plan(projection: Projection, parameters?: Record<string, any>): ExecutionNode {
@@ -42,26 +42,274 @@ export class Planner {
     const orderSpecs = this.parseOrderBy(projection.orderBy, new Set(aliases));
     const wherePredicate = projection.where;
     const normalizedWhere = wherePredicate ? this.normalizePredicate(wherePredicate, new Set(aliases)) : undefined;
+    const joinHint = projection.hints?.join ?? JoinStrategy.Auto;
+    const predicateMode = projection.hints?.predicateMode ?? PredicateMode.Auto;
+    const predicateOrMode = projection.hints?.predicateOrMode ?? PredicateOrMode.Auto;
+
+    const base = normalizedWhere
+      ? this.planWherePredicate(aliases, sources, orderSpecs, normalizedWhere, joinHint, predicateMode, predicateOrMode)
+      : this.planBranch(aliases, sources, orderSpecs, undefined, joinHint);
+
+    const withSortAndLimit = this.applySortAndLimit(base, orderSpecs, projection.limit, projection.offset);
+    const planned = this.applyProjection(withSortAndLimit, projection.select as Record<string, any> | undefined, aliases);
+    this.params = undefined;
+    return planned;
+  }
+
+  private planWherePredicate(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    predicate: Predicate,
+    joinHint: JoinStrategy,
+    predicateMode: PredicateMode,
+    predicateOrMode: PredicateOrMode
+  ): ExecutionNode {
+    // Respect mode: keep predicate structure (no OR rewrites).
+    if (predicateMode === PredicateMode.Respect) {
+      return this.planBranch(aliases, sources, orderSpecs, predicate, joinHint);
+    }
+
+    const dnf = toDNF(predicate);
+    const disjuncts = dnf.type === 'OR' ? dnf.conditions : [dnf];
+    if (disjuncts.length === 1) {
+      return this.planBranch(aliases, sources, orderSpecs, disjuncts[0], joinHint);
+    }
+
+    const { common, remainders } = this.extractGlobalCommonFactor(disjuncts);
+    const unionPlan = this.planUnionOfDisjuncts(aliases, sources, orderSpecs, disjuncts, joinHint);
+    const commonPlan = this.planCommonFactorWithResidualOr(aliases, sources, orderSpecs, common, remainders, joinHint);
+
+    switch (predicateOrMode) {
+      case PredicateOrMode.Union:
+        return unionPlan;
+      case PredicateOrMode.SingleScan:
+        return commonPlan;
+      case PredicateOrMode.Auto:
+        return this.chooseBestOrPlan(aliases, sources, orderSpecs, disjuncts, common, remainders, unionPlan, commonPlan);
+      default:
+        predicateOrMode satisfies never;
+        throw new Error(`Unexpected predicateOrMode: ${predicateOrMode}`);
+    }
+  }
+
+  private planBranch(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    wherePredicate: Predicate | undefined,
+    joinHint: JoinStrategy
+  ): ExecutionNode {
     const split = wherePredicate
-      ? this.predicateSplitter.split(normalizedWhere!, aliases)
+      ? this.predicateSplitter.split(wherePredicate, aliases)
       : { sourcePredicates: {}, joinPredicates: [], residualPredicates: [] };
 
     const scanPlan = this.buildScanNodes(aliases, sources, split.sourcePredicates, orderSpecs);
-
     const joinOrder = this.rankJoinOrder(aliases, scanPlan.costs);
+
     const rootJoin = this.buildJoins(
       joinOrder,
       aliases,
       scanPlan.nodes,
       split.joinPredicates,
-      projection.hints?.join ?? JoinStrategy.Auto
+      joinHint
     );
 
-    const withResiduals = this.applyResidualFilters(rootJoin, split.residualPredicates);
-    const withSortAndLimit = this.applySortAndLimit(withResiduals, orderSpecs, projection.limit, projection.offset);
-    const planned = this.applyProjection(withSortAndLimit, projection.select as Record<string, any> | undefined, aliases);
-    this.params = undefined;
-    return planned;
+    return this.applyResidualFilters(rootJoin, split.residualPredicates);
+  }
+
+  private extractGlobalCommonFactor(disjuncts: Predicate[]): { common: Predicate | undefined; remainders: Predicate[] } {
+    const normalized = disjuncts.map(d => simplifyPredicate(d));
+    const conjunctLists = normalized.map(d => this.getConjuncts(d));
+
+    const first = conjunctLists[0];
+    const firstMap = new Map<string, Predicate>();
+    for (const c of first) {
+      firstMap.set(this.predicateKey(c), c);
+    }
+
+    const commonKeys = new Set<string>(firstMap.keys());
+    for (let i = 1; i < conjunctLists.length; i++) {
+      const keys = new Set(conjunctLists[i].map(c => this.predicateKey(c)));
+      for (const k of Array.from(commonKeys)) {
+        if (!keys.has(k)) commonKeys.delete(k);
+      }
+    }
+
+    const commonConjuncts = Array.from(commonKeys).map(k => firstMap.get(k)!).map(simplifyPredicate);
+    const common = this.andOf(commonConjuncts);
+
+    const remainders = conjunctLists.map(list => {
+      const remaining = list
+        .filter(c => !commonKeys.has(this.predicateKey(c)))
+        .map(simplifyPredicate);
+      return this.andOf(remaining) ?? ({ type: 'CONSTANT', value: true } as Predicate);
+    }).map(simplifyPredicate);
+
+    return { common, remainders };
+  }
+
+  private planUnionOfDisjuncts(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    disjuncts: Predicate[],
+    joinHint: JoinStrategy
+  ): ExecutionNode {
+    const inputs = disjuncts.map(d => this.planBranch(aliases, sources, orderSpecs, d, joinHint));
+    return {
+      type: NodeType.UNION,
+      inputs,
+      distinct: UnionDistinctStrategy.DocPath,
+    } as UnionNode;
+  }
+
+  private planCommonFactorWithResidualOr(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    common: Predicate | undefined,
+    remainders: Predicate[],
+    joinHint: JoinStrategy
+  ): ExecutionNode {
+    const basePredicate = common && !(common.type === 'CONSTANT' && common.value === true) ? common : undefined;
+    const base = this.planBranch(aliases, sources, orderSpecs, basePredicate, joinHint);
+
+    const residualOr = simplifyPredicate(this.orOf(remainders));
+    if (residualOr.type === 'CONSTANT' && residualOr.value === true) {
+      return base;
+    }
+
+    return {
+      type: NodeType.FILTER,
+      source: base,
+      predicate: residualOr,
+    } as FilterNode;
+  }
+
+  private chooseBestOrPlan(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    disjuncts: Predicate[],
+    common: Predicate | undefined,
+    remainders: Predicate[],
+    unionPlan: ExecutionNode,
+    commonPlan: ExecutionNode
+  ): ExecutionNode {
+    const unionCost = this.estimateUnionCost(aliases, sources, orderSpecs, disjuncts);
+    const commonCost = this.estimateCommonCost(aliases, sources, orderSpecs, common, remainders);
+    return unionCost < commonCost ? unionPlan : commonPlan;
+  }
+
+  private estimateUnionCost(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    disjuncts: Predicate[]
+  ): number {
+    let total = 0;
+    for (const d of disjuncts) {
+      total += this.estimateConjunctivePlanCost(aliases, sources, orderSpecs, d);
+    }
+    const branches = disjuncts.length;
+    const hasJoin = aliases.length > 1;
+    // Penalize UNION dedupe and (for joins) duplicated join work.
+    total += (branches - 1) * (hasJoin ? 500 : 50);
+    return total;
+  }
+
+  private estimateCommonCost(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    common: Predicate | undefined,
+    remainders: Predicate[]
+  ): number {
+    const basePredicate = common && !(common.type === 'CONSTANT' && common.value === true) ? common : undefined;
+    let total = this.estimateConjunctivePlanCost(aliases, sources, orderSpecs, basePredicate);
+    // Residual OR filter is evaluated in-memory; approximate its cost by number of branches.
+    total += remainders.length * 10;
+    return total;
+  }
+
+  private estimateConjunctivePlanCost(
+    aliases: string[],
+    sources: Record<string, any>,
+    orderSpecs: OrderBySpec[],
+    wherePredicate: Predicate | undefined
+  ): number {
+    const split = wherePredicate
+      ? this.predicateSplitter.split(wherePredicate, aliases)
+      : { sourcePredicates: {}, joinPredicates: [], residualPredicates: [] };
+
+    let total = 0;
+    for (const alias of aliases) {
+      const source = sources[alias] as Collection;
+      const { path, collectionGroup } = this.resolveCollectionPath(source);
+      const pred = split.sourcePredicates[alias];
+      const { score } = this.planSingleScan(alias, path, collectionGroup, pred, orderSpecs.filter(o => o.field.source === alias));
+      total += score;
+    }
+    return total;
+  }
+
+  private getConjuncts(predicate: Predicate): Predicate[] {
+    const simplified = simplifyPredicate(predicate);
+    if (simplified.type === 'AND') return simplified.conditions;
+    if (simplified.type === 'CONSTANT' && simplified.value === true) return [];
+    return [simplified];
+  }
+
+  private andOf(conditions: Predicate[]): Predicate | undefined {
+    const filtered = conditions.filter(p => !(p.type === 'CONSTANT' && p.value === true));
+    if (filtered.length === 0) return undefined;
+    if (filtered.length === 1) return filtered[0];
+    return { type: 'AND', conditions: filtered } as Predicate;
+  }
+
+  private orOf(conditions: Predicate[]): Predicate {
+    const filtered = conditions.map(simplifyPredicate);
+    if (filtered.length === 0) return { type: 'CONSTANT', value: false } as Predicate;
+    if (filtered.length === 1) return filtered[0];
+    return { type: 'OR', conditions: filtered } as Predicate;
+  }
+
+  private predicateKey(p: Predicate): string {
+    const pred = simplifyPredicate(p);
+    switch (pred.type) {
+      case 'CONSTANT':
+        return `C:${pred.value}`;
+      case 'COMPARISON':
+        return `CMP:${pred.operation}:${this.exprKey(pred.left)}:${this.exprKey(pred.right)}`;
+      case 'NOT':
+        return `NOT:${this.predicateKey(pred.operand)}`;
+      case 'AND': {
+        const parts = pred.conditions.map(c => this.predicateKey(c)).sort();
+        return `AND:${parts.join('|')}`;
+      }
+      case 'OR': {
+        const parts = pred.conditions.map(c => this.predicateKey(c)).sort();
+        return `OR:${parts.join('|')}`;
+      }
+      default:
+        pred satisfies never;
+        return 'UNKNOWN';
+    }
+  }
+
+  private exprKey(e: any): string {
+    if (!e || typeof e !== 'object') return `X:${String(e)}`;
+    switch (e.kind) {
+      case 'Field':
+        return `F:${e.source}.${e.path.join('.')}`;
+      case 'Literal':
+        return `L:${e.type}:${JSON.stringify(e.value)}`;
+      case 'Param':
+        return `P:${e.name}`;
+      default:
+        return `X:${JSON.stringify(e)}`;
+    }
   }
 
   private buildScanNodes(
@@ -78,40 +326,123 @@ export class Planner {
       const { path, collectionGroup } = this.resolveCollectionPath(source);
       const predicate = sourcePredicates[alias];
 
-      if (predicate) {
-        const optimization = this.optimizer.optimize(
-          predicate,
-          path,
-          orderBy.filter(o => o.field.source === alias)
-        );
-
-        costs[alias] = optimization.score;
-        if (optimization.strategy === 'UNION_SCAN') {
-          const inputs = optimization.scans.map(scan => {
-            const base = this.createScanNode(alias, path, collectionGroup, scan.constraints.constraints);
-            return scan.constraints.nonIndexable > 0
-              ? this.wrapFilter(base, scan.predicate)
-              : base;
-          });
-          scans[alias] = {
-            type: NodeType.UNION,
-            inputs,
-            distinct: UnionDistinctStrategy.DocPath,
-          } as UnionNode;
-        } else {
-          const plan = optimization.scans[0];
-          const base = this.createScanNode(alias, path, collectionGroup, plan.constraints.constraints);
-          scans[alias] = plan.constraints.nonIndexable > 0
-            ? this.wrapFilter(base, plan.predicate)
-            : base;
-        }
-      } else {
-        costs[alias] = Infinity;
-        scans[alias] = this.createScanNode(alias, path, collectionGroup, []);
-      }
+      const { node, score } = this.planSingleScan(
+        alias,
+        path,
+        collectionGroup,
+        predicate,
+        orderBy.filter(o => o.field.source === alias)
+      );
+      scans[alias] = node;
+      costs[alias] = predicate ? score : Infinity;
     }
 
     return { nodes: scans, costs };
+  }
+
+  private planSingleScan(
+    alias: string,
+    path: string,
+    collectionGroup: boolean | undefined,
+    predicate: Predicate | undefined,
+    orderBy: OrderBySpec[]
+  ): { node: ExecutionNode; score: number } {
+    if (!predicate) {
+      return { node: this.createScanNode(alias, path, collectionGroup, []), score: 1000 };
+    }
+
+    const constraints: Constraint[] = [];
+    const nonIndexable = this.extractConstraints(predicate, constraints);
+    this.validateFirestoreGuardrails(constraints, orderBy);
+    const score = this.scoreConstraints(path, constraints, orderBy) + nonIndexable * 100;
+
+    const base = this.createScanNode(alias, path, collectionGroup, constraints);
+    const node = nonIndexable > 0 ? this.wrapFilter(base, predicate) : base;
+    return { node, score };
+  }
+
+  private scoreConstraints(collectionPath: string, constraints: Constraint[], orderBy?: OrderBySpec[]): number {
+    const sortOrder = this.toSortOrder(orderBy);
+    const match = this.indexManager.match(collectionPath, constraints, sortOrder);
+
+    if (match.type === 'exact') {
+      return 1;
+    }
+    if (match.type === 'partial') {
+      return Math.max(1, 10 - match.matchedFields) + 5;
+    }
+    return 1000;
+  }
+
+  private toSortOrder(orderBy?: OrderBySpec[]): SortOrder | undefined {
+    if (!orderBy || orderBy.length === 0) return undefined;
+    const primary = orderBy[0];
+    return {
+      field: primary.field.path.join('.'),
+      direction: primary.direction,
+    };
+  }
+
+  private extractConstraints(predicate: Predicate, constraints: Constraint[]): number {
+    let nonIndexable = 0;
+
+    if (predicate.type === 'AND') {
+      for (const c of predicate.conditions) {
+        nonIndexable += this.extractConstraints(c, constraints);
+      }
+      return nonIndexable;
+    }
+
+    if (predicate.type === 'COMPARISON') {
+      const field = this.asField(predicate.left);
+      const literal = predicate.right.kind === 'Literal' ? predicate.right : null;
+      if (field && literal) {
+        constraints.push({
+          field,
+          op: predicate.operation,
+          value: literal,
+        });
+      } else {
+        nonIndexable += 1;
+      }
+      return nonIndexable;
+    }
+
+    if (predicate.type === 'OR' || predicate.type === 'NOT') {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  private asField(expr: any): Field | null {
+    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
+      return expr as Field;
+    }
+    return null;
+  }
+
+  private validateFirestoreGuardrails(constraints: Constraint[], orderBy?: OrderBySpec[]) {
+    const inequalityOps = new Set<Constraint['op']>(['<', '<=', '>', '>=', '!=', 'not-in']);
+    const inequalityFields = new Set<string>();
+
+    for (const c of constraints) {
+      if (inequalityOps.has(c.op)) {
+        inequalityFields.add(c.field.path.join('.'));
+      }
+    }
+
+    if (inequalityFields.size > 1) {
+      throw new Error(`Firestore allows at most one inequality field per query (found: ${Array.from(inequalityFields).join(', ')}).`);
+    }
+
+    if (inequalityFields.size === 1 && orderBy && orderBy.length > 0) {
+      const inequalityField = Array.from(inequalityFields)[0];
+      const orderField = orderBy[0].field.path.join('.');
+      if (orderField !== inequalityField) {
+        throw new Error('When using an inequality filter, the first orderBy field must match the inequality field.');
+      }
+    }
   }
 
   private rankJoinOrder(aliases: string[], costs: Record<string, number>): string[] {
