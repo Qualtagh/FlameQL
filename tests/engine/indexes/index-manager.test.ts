@@ -58,36 +58,26 @@ describe('IndexManager', () => {
     });
   });
 
-  describe('deduceSingleFieldIndexes', () => {
-    it('should add ASC and DESC indexes for fields', () => {
-      indexManager.deduceSingleFieldIndexes('users', ['name', 'age']);
-      const indexes = indexManager.getIndexes('users');
-
-      // 2 fields * 2 modes = 4 indexes
-      expect(indexes).toHaveLength(4);
-
-      const nameAsc = indexes.find(i => i.fields[0].fieldPath === 'name' && i.fields[0].mode === 'ASCENDING');
-      const nameDesc = indexes.find(i => i.fields[0].fieldPath === 'name' && i.fields[0].mode === 'DESCENDING');
-
-      expect(nameAsc).toBeDefined();
-      expect(nameDesc).toBeDefined();
-    });
-  });
-
   describe('match', () => {
     beforeEach(() => {
-      // Setup some indexes
-      indexManager.deduceSingleFieldIndexes('users', ['name', 'age', 'status']);
-
-      // Composite index: status ASC, age DESC
-      indexManager.addIndex({
-        collectionId: 'users',
-        queryScope: 'COLLECTION',
-        fields: [
-          { fieldPath: 'status', mode: 'ASCENDING' },
-          { fieldPath: 'age', mode: 'DESCENDING' },
+      // Load indexes from Firestore JSON (single-field + composite)
+      const json = JSON.stringify({
+        indexes: [
+          { collectionGroup: 'users', queryScope: 'COLLECTION', fields: [{ fieldPath: 'name' }] },
+          { collectionGroup: 'users', queryScope: 'COLLECTION', fields: [{ fieldPath: 'age' }] },
+          { collectionGroup: 'users', queryScope: 'COLLECTION', fields: [{ fieldPath: 'status' }] },
+          {
+            collectionGroup: 'users',
+            queryScope: 'COLLECTION',
+            fields: [
+              { fieldPath: 'status', order: 'ASCENDING' },
+              { fieldPath: 'age', order: 'DESCENDING' },
+            ],
+          },
         ],
       });
+
+      indexManager.loadFromFirestoreJson(json);
     });
 
     it('should match exact single field equality', () => {

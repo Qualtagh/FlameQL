@@ -1,4 +1,5 @@
-import { Collection, Expression, Field, Literal, LiteralType, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
+import { literal } from '../api/api';
+import { Collection, Expression, Field, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
 import { JoinStrategy } from '../api/hints';
 import {
   Constraint,
@@ -228,7 +229,7 @@ export class Planner {
     const knownAliases = new Set(aliases);
 
     for (const [key, value] of Object.entries(select)) {
-      fields[key] = this.toExpression(value, knownAliases);
+      fields[key] = this.normalizeExpression(value, knownAliases);
     }
 
     const projectNode: ProjectNode = {
@@ -335,64 +336,6 @@ export class Planner {
     } as FilterNode;
   }
 
-  private toExpression(value: any, aliases: Set<string>): Expression {
-    if (value instanceof Param || value && typeof value === 'object' && value.kind === 'Param') {
-      return this.resolveParam((value as Param).name);
-    }
-
-    if (typeof value === 'string') {
-      return this.parseField(value, aliases);
-    }
-
-    if (value instanceof Field || value && typeof value === 'object' && value.kind === 'Field') {
-      const field = value as Field;
-      this.assertAliasKnown(field, aliases);
-      return field;
-    }
-
-    if (value instanceof Literal || value && typeof value === 'object' && value.kind === 'Literal') {
-      return this.toLiteralValue(value as Literal);
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
-      return this.toLiteralValue(value);
-    }
-
-    throw new Error('Unsupported expression in select clause. Use alias-qualified fields or Literal values.');
-  }
-
-  private toLiteralValue(value: Literal | number | boolean | null): Literal {
-    if (value instanceof Literal) {
-      return value;
-    }
-
-    if (value === null) {
-      return new Literal(null, LiteralType.Null);
-    }
-
-    if (typeof value === 'number') {
-      return new Literal(value, LiteralType.Number);
-    }
-
-    if (typeof value === 'boolean') {
-      return new Literal(value, LiteralType.Boolean);
-    }
-
-    return new Literal(value as any, LiteralType.String);
-  }
-
-  private parseField(path: string, aliases: Set<string>): Field {
-    const segments = path.split('.');
-    if (segments.length < 2) {
-      throw new Error(`Field reference "${path}" must include alias prefix.`);
-    }
-
-    const [alias, ...rest] = segments;
-    const ref = new Field(alias, rest);
-    this.assertAliasKnown(ref, aliases);
-    return ref;
-  }
-
   private assertAliasKnown(ref: Field, aliases: Set<string>) {
     if (!ref.source) {
       throw new Error('Field reference must include an alias.');
@@ -422,7 +365,8 @@ export class Planner {
       case 'CONSTANT':
         return predicate;
       default:
-        return predicate;
+        predicate satisfies never;
+        throw new Error(`Unexpected predicate type: ${predicate}`);
     }
   }
 
@@ -455,11 +399,23 @@ export class Planner {
       throw new Error(`Parameter "${name}" was not provided.`);
     }
     const value = this.params[name];
-    if (value === null) return new Literal(null, LiteralType.Null);
-    if (typeof value === 'string') return new Literal(value, LiteralType.String);
-    if (typeof value === 'number') return new Literal(value, LiteralType.Number);
-    if (typeof value === 'boolean') return new Literal(value, LiteralType.Boolean);
-    throw new Error(`Unsupported parameter type for "${name}".`);
+    return literal(value);
+  }
+
+  private parseField(path: string, aliases: Set<string>): Field {
+    const segments = path.split('.');
+    if (segments.length < 2) {
+      throw new Error(`Field reference "${path}" must include alias prefix.`);
+    }
+
+    const [alias, ...rest] = segments;
+    const ref = new Field(alias, rest);
+    this.assertAliasKnown(ref, aliases);
+    return ref;
+  }
+
+  private toLiteralValue(value: Literal | number | boolean | null): Literal {
+    return value instanceof Literal ? value : literal(value);
   }
 
   private assertJoinHintCompatibility(hint: JoinStrategy, condition: Predicate) {
@@ -482,6 +438,9 @@ export class Planner {
       case JoinStrategy.NestedLoop:
       case JoinStrategy.Auto:
         return;
+      default:
+        hint satisfies never;
+        throw new Error(`Unexpected join strategy: ${hint}`);
     }
   }
 }

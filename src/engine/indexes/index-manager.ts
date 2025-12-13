@@ -66,34 +66,6 @@ export class IndexManager {
   }
 
   /**
-   * Deduces single-field indexes for the given fields.
-   * Firestore automatically creates single-field indexes for each field in a document,
-   * unless explicitly exempted.
-   * This method assumes all provided fields have single-field indexes (ASC and DESC).
-   */
-  deduceSingleFieldIndexes(collectionId: string, fields: string[]) {
-    for (const field of fields) {
-      // Ascending index
-      this.addIndex({
-        collectionId,
-        queryScope: 'COLLECTION',
-        fields: [{ fieldPath: field, mode: 'ASCENDING' }],
-      });
-
-      // Descending index
-      this.addIndex({
-        collectionId,
-        queryScope: 'COLLECTION',
-        fields: [{ fieldPath: field, mode: 'DESCENDING' }],
-      });
-
-      // Array-contains index is also automatic for arrays, but we don't know types here.
-      // We'll skip array-contains for now or add it if needed.
-      // For now, let's stick to ASC/DESC as they are most relevant for sorting.
-    }
-  }
-
-  /**
    * Finds the best matching index for the given constraints and sort order.
    */
   match(collectionId: string, constraints: Constraint[], sortOrder?: SortOrder): IndexMatch {
