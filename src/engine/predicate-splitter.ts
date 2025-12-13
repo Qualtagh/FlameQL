@@ -1,4 +1,4 @@
-import { Expression, Field, Predicate } from '../api/expression';
+import { CompositePredicate, Expression, Field, Predicate } from '../api/expression';
 import { simplifyPredicate } from './utils/predicate-utils';
 
 export interface SplitPredicates {
@@ -31,7 +31,9 @@ export class PredicateSplitter {
       if (involvedSources.length === 1) {
         const source = involvedSources[0];
         const existing = result.sourcePredicates[source];
-        if (existing) {
+        if (existing && existing.type === 'AND') {
+          (result.sourcePredicates[source] as CompositePredicate).conditions.push(conjunct);
+        } else if (existing) {
           result.sourcePredicates[source] = { type: 'AND', conditions: [existing, conjunct] };
         } else {
           result.sourcePredicates[source] = conjunct;

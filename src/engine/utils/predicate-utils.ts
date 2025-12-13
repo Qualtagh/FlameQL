@@ -262,7 +262,7 @@ function toDNFInternal(predicate: Predicate): Predicate {
   return predicate;
 }
 
-export function predicatesEqual(a: Predicate, b: Predicate): boolean {
+function predicatesEqual(a: Predicate, b: Predicate): boolean {
   if (a.type !== b.type) return false;
 
   switch (a.type) {
