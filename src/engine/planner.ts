@@ -11,13 +11,14 @@ import {
   ProjectNode,
   ScanNode,
   SortNode,
+  traverseExecutionNode,
   UnionDistinctStrategy,
   UnionNode,
 } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
-import { isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
+import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
 import { simplifyPredicate, toDNF } from './utils/predicate-utils';
 
 export class Planner {
@@ -496,12 +497,19 @@ export class Planner {
         joinCondition = { type: 'AND', conditions: relevant };
       }
 
+      // If we have a simple binary predicate, normalize orientation so the LEFT operand
+      // comes from the left subtree and the RIGHT operand from the right subtree.
+      // This is required for merge join correctness (it does not re-orient dynamically).
+      const leftAliases = this.collectNodeAliases(root);
+      const rightAliases = this.collectNodeAliases(rightNode);
+      const orientedCondition = this.orientJoinPredicateForSides(joinCondition, leftAliases, rightAliases);
+
       const joinNode: JoinNode = {
         type: NodeType.JOIN,
         left: root,
         right: rightNode,
-        joinType: this.resolveJoinStrategy(joinCondition, hint),
-        condition: simplifyPredicate(joinCondition),
+        joinType: this.resolveJoinStrategy(orientedCondition, hint, root, rightNode),
+        condition: simplifyPredicate(orientedCondition),
         crossProduct: relevant.length === 0,
       };
 
@@ -516,7 +524,7 @@ export class Planner {
     return root;
   }
 
-  private resolveJoinStrategy(condition: Predicate, hint: JoinStrategy): JoinStrategy {
+  private resolveJoinStrategy(condition: Predicate, hint: JoinStrategy, left: ExecutionNode, right: ExecutionNode): JoinStrategy {
     if (hint && hint !== JoinStrategy.Auto) {
       this.assertJoinHintCompatibility(hint, condition);
       return hint;
@@ -526,11 +534,187 @@ export class Planner {
       return JoinStrategy.Hash;
     }
 
-    if (isMergeJoinCompatible(condition)) {
+    if (isMergeJoinCompatible(condition) && this.canUseMergeJoinWithoutSorting(condition, left, right)) {
       return JoinStrategy.Merge;
     }
 
     return JoinStrategy.NestedLoop;
+  }
+
+  /**
+   * Merge-join is only chosen automatically when its required ordering is already satisfied
+   * (so it won't introduce extra sorting work).
+   *
+   * We currently treat ordering as satisfied when:
+   * - The left input is already sorted by the left join key (ASC), OR it is a single scan that can be ordered
+   *   by that key using a known Firestore index (exact match).
+   * - Same for the right input.
+   */
+  private canUseMergeJoinWithoutSorting(condition: Predicate, left: ExecutionNode, right: ExecutionNode): boolean {
+    if (condition.type !== 'COMPARISON') return false;
+
+    const leftField = this.asField(condition.left);
+    const rightField = this.asField(condition.right);
+    if (!leftField || !rightField) return false;
+
+    const plannedLeft = this.planEnsureSortedBy(left, leftField, 'asc');
+    if (!plannedLeft.ok) return false;
+    const plannedRight = this.planEnsureSortedBy(right, rightField, 'asc');
+    if (!plannedRight.ok) return false;
+
+    // Commit scan orderBy updates only if BOTH sides can satisfy the requirement.
+    plannedLeft.apply?.();
+    plannedRight.apply?.();
+    return true;
+  }
+
+  private planEnsureSortedBy(
+    node: ExecutionNode,
+    field: Field,
+    direction: SortOrder['direction']
+  ): { ok: boolean; apply?: () => void } {
+    const current = this.getPlannedSortOrder(node);
+    if (this.sortOrderMatches(current, field, direction)) {
+      return { ok: true };
+    }
+
+    const scan = this.findUnderlyingScan(node);
+    if (!scan) return { ok: false };
+
+    // If the scan already has an orderBy and it doesn't match, don't silently override it.
+    if (scan.orderBy && scan.orderBy.length > 0) {
+      const primary = scan.orderBy[0];
+      const currentKey = `${scan.alias}.${primary.field.path.join('.')}`;
+      const expectedKey = `${field.source}.${field.path.join('.')}`;
+      if (currentKey === expectedKey && primary.direction === direction) {
+        return { ok: true };
+      }
+      return { ok: false };
+    }
+
+    // IndexManager operates on unqualified field paths (Firestore-level).
+    const match = this.indexManager.match(
+      scan.collectionPath,
+      scan.constraints,
+      { field: field.path.join('.'), direction }
+    );
+    if (match.type !== 'exact') return { ok: false };
+
+    return {
+      ok: true,
+      apply: () => {
+        scan.orderBy = [{
+          field: new Field(scan.alias, field.path),
+          direction,
+        }];
+      },
+    };
+  }
+
+  private sortOrderMatches(order: SortOrder | undefined, field: Field, direction: SortOrder['direction']): boolean {
+    if (!order) return false;
+    const expectedKey = `${field.source}.${field.path.join('.')}`;
+    return order.field === expectedKey && order.direction === direction;
+  }
+
+  private findUnderlyingScan(node: ExecutionNode): ScanNode | null {
+    switch (node.type) {
+      case NodeType.SCAN:
+        return node as ScanNode;
+      case NodeType.FILTER:
+        return this.findUnderlyingScan((node as FilterNode).source);
+      case NodeType.PROJECT:
+        return this.findUnderlyingScan((node as ProjectNode).source);
+      case NodeType.LIMIT:
+        return this.findUnderlyingScan((node as LimitNode).source);
+      default:
+        return null;
+    }
+  }
+
+  private collectNodeAliases(node: ExecutionNode): Set<string> {
+    const out = new Set<string>();
+    traverseExecutionNode(node, n => {
+      if (n.type === NodeType.SCAN) {
+        out.add((n as ScanNode).alias);
+      }
+    });
+    return out;
+  }
+
+  private getPlannedSortOrder(node: ExecutionNode): SortOrder | undefined {
+    switch (node.type) {
+      case NodeType.SCAN: {
+        const scan = node as ScanNode;
+        const primary = scan.orderBy?.[0];
+        if (!primary) return undefined;
+        return {
+          field: `${scan.alias}.${primary.field.path.join('.')}`,
+          direction: primary.direction,
+        };
+      }
+      case NodeType.FILTER:
+        return this.getPlannedSortOrder((node as FilterNode).source);
+      case NodeType.PROJECT:
+        return this.getPlannedSortOrder((node as ProjectNode).source);
+      case NodeType.LIMIT:
+        return this.getPlannedSortOrder((node as LimitNode).source);
+      case NodeType.SORT: {
+        const sort = node as SortNode;
+        const primary = sort.orderBy[0];
+        if (!primary) return undefined;
+        return {
+          field: `${primary.field.source}.${primary.field.path.join('.')}`,
+          direction: primary.direction,
+        };
+      }
+      case NodeType.JOIN: {
+        const join = node as JoinNode;
+
+        // Merge join outputs rows sorted by the join key (ASC), regardless of input ordering.
+        if (join.joinType === JoinStrategy.Merge) {
+          if (join.condition.type !== 'COMPARISON') return undefined;
+          const leftField = this.asField(join.condition.left);
+          if (!leftField) return undefined;
+          return { field: `${leftField.source}.${leftField.path.join('.')}`, direction: 'asc' };
+        }
+
+        // Hash and nested-loop joins preserve the order of the LEFT input stream.
+        return this.getPlannedSortOrder(join.left);
+      }
+      default:
+        return undefined;
+    }
+  }
+
+  private orientJoinPredicateForSides(predicate: Predicate, leftAliases: Set<string>, rightAliases: Set<string>): Predicate {
+    if (predicate.type !== 'COMPARISON') return predicate;
+
+    const leftField = this.asField(predicate.left);
+    const rightField = this.asField(predicate.right);
+    if (!leftField || !rightField) return predicate;
+
+    const leftInLeft = !!leftField.source && leftAliases.has(leftField.source);
+    const leftInRight = !!leftField.source && rightAliases.has(leftField.source);
+    const rightInLeft = !!rightField.source && leftAliases.has(rightField.source);
+    const rightInRight = !!rightField.source && rightAliases.has(rightField.source);
+
+    // Already oriented.
+    if (leftInLeft && rightInRight) return predicate;
+
+    // Swapped operands: invert comparator when flipping.
+    if (leftInRight && rightInLeft) {
+      const inverted = invertComparisonOp(predicate.operation);
+      if (!inverted) return predicate;
+      return {
+        type: 'COMPARISON',
+        left: predicate.right,
+        right: predicate.left,
+        operation: inverted,
+      };
+    }
+
+    return predicate;
   }
 
   private applyResidualFilters(root: ExecutionNode, residualPredicates: Predicate[]): ExecutionNode {

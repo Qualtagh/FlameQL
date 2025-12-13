@@ -85,3 +85,36 @@ export interface LimitNode extends ExecutionNode {
   limit: number;
   offset?: number;
 }
+
+export function getExecutionNodeChildren(node: ExecutionNode): ExecutionNode[] {
+  switch (node.type) {
+    case NodeType.SCAN:
+      return [];
+    case NodeType.FILTER:
+      return [(node as FilterNode).source];
+    case NodeType.PROJECT:
+      return [(node as ProjectNode).source];
+    case NodeType.JOIN: {
+      const join = node as JoinNode;
+      return [join.left, join.right];
+    }
+    case NodeType.AGGREGATE:
+      return [(node as AggregateNode).source];
+    case NodeType.UNION:
+      return (node as UnionNode).inputs;
+    case NodeType.SORT:
+      return [(node as SortNode).source];
+    case NodeType.LIMIT:
+      return [(node as LimitNode).source];
+    default:
+      node.type satisfies never;
+      return [];
+  }
+}
+
+export function traverseExecutionNode(root: ExecutionNode, visit: (node: ExecutionNode) => void) {
+  visit(root);
+  for (const child of getExecutionNodeChildren(root)) {
+    traverseExecutionNode(child, visit);
+  }
+}

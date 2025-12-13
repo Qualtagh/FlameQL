@@ -85,8 +85,8 @@ export class Executor {
         );
       default:
         node.type satisfies never;
+        throw new Error(`Unsupported node: ${node}`);
     }
-    throw new Error(`Unsupported node: ${node}`);
   }
 
 }

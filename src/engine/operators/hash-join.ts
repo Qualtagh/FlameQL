@@ -129,7 +129,8 @@ export class HashJoinOperator implements Operator {
   }
 
   getSortOrder(): SortOrder | undefined {
-    return undefined;
+    // Hash join preserves the order of the LEFT input stream.
+    return this.leftSource.getSortOrder();
   }
 
   private orientFields(sample: any) {

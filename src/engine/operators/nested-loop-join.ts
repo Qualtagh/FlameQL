@@ -54,6 +54,7 @@ export class NestedLoopJoinOperator implements Operator {
   }
 
   getSortOrder(): SortOrder | undefined {
-    return undefined;
+    // Nested-loop join preserves the order of the LEFT input stream.
+    return this.leftSource.getSortOrder();
   }
 }

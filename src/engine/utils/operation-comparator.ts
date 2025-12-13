@@ -103,3 +103,21 @@ export function isMergeJoinCompatible(predicate: Predicate): boolean {
       return false;
   }
 }
+
+export function invertComparisonOp(op: any): any | null {
+  switch (op) {
+    case '==':
+    case '!=':
+      return op;
+    case '<':
+      return '>';
+    case '<=':
+      return '>=';
+    case '>':
+      return '<';
+    case '>=':
+      return '<=';
+    default:
+      return null;
+  }
+}

@@ -32,7 +32,10 @@ export class FirestoreScan implements Operator {
           query = query.orderBy(spec.field.path.join('.'), spec.direction);
         }
         this.sortOrder = {
-          field: this.node.orderBy[0].field.path.join('.'),
+          // Operators reason about sort order on the *row stream*, which is aliased:
+          // `{ [alias]: docData }`. Use alias-qualified field refs for consistency with
+          // `Sort` and `MergeJoinOperator`.
+          field: `${this.node.alias}.${this.node.orderBy[0].field.path.join('.')}`,
           direction: this.node.orderBy[0].direction,
         };
       }
