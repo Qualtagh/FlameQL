@@ -18,6 +18,7 @@ import {
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
+import { pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
 import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
 import { simplifyPredicate, toDNF } from './utils/predicate-utils';
 
@@ -538,7 +539,40 @@ export class Planner {
       return JoinStrategy.Merge;
     }
 
+    if (this.canUseIndexedNestedLoop(condition, left, right)) {
+      return JoinStrategy.IndexedNestedLoop;
+    }
+
     return JoinStrategy.NestedLoop;
+  }
+
+  /**
+   * Indexed nested-loop join is chosen automatically as a fallback when:
+   * - Hash and merge joins were not selected, AND
+   * - We can perform an indexed lookup on the RIGHT side using a Firestore-supported membership query
+   *   (`in` / `array-contains-any`) on a single join field backed by a known index.
+   *
+   * Note: the operator still evaluates the full join predicate in-memory, so this is safe even if the join
+   * condition is a conjunction of multiple predicates; we only need ONE usable lookup predicate to reduce
+   * the right-side search space.
+   */
+  private canUseIndexedNestedLoop(condition: Predicate, _left: ExecutionNode, right: ExecutionNode): boolean {
+    const scan = this.findUnderlyingScan(right);
+    if (!scan) return false;
+
+    // Choose any feasible lookup plan that is backed by a known index on the RIGHT scan.
+    return !!pickIndexedNestedLoopLookupPlan(condition, scan, this.indexManager, { requireIndex: true });
+  }
+
+  private collectComparisonPredicates(predicate: Predicate): Array<{ left: any; right: any; operation: any }> {
+    switch (predicate.type) {
+      case 'COMPARISON':
+        return [predicate];
+      case 'AND':
+        return predicate.conditions.flatMap(p => this.collectComparisonPredicates(p));
+      default:
+        return [];
+    }
   }
 
   /**
@@ -946,8 +980,8 @@ export class Planner {
         }
         return;
       case JoinStrategy.IndexedNestedLoop:
-        if (condition.type !== 'COMPARISON' || !isHashJoinCompatible(condition)) {
-          throw new Error('Indexed nested-loop join requires equality-style predicates.');
+        if (!this.hasIndexedNestedLoopPredicate(condition)) {
+          throw new Error('Indexed nested-loop join requires a conjunctive join predicate containing Field-vs-Field comparisons.');
         }
         return;
       case JoinStrategy.NestedLoop:
@@ -957,5 +991,12 @@ export class Planner {
         hint satisfies never;
         throw new Error(`Unexpected join strategy: ${hint}`);
     }
+  }
+
+  private hasIndexedNestedLoopPredicate(condition: Predicate): boolean {
+    const comparisons = this.collectComparisonPredicates(condition);
+    return comparisons.some(c => {
+      return !!this.asField(c.left) && !!this.asField(c.right);
+    });
   }
 }

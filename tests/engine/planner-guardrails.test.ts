@@ -53,6 +53,19 @@ describe('Planner guardrails', () => {
     expect(() => planner.plan(p)).toThrow('Merge join hint is incompatible with the provided join predicate.');
   });
 
+  it('accepts indexed nested-loop join hint for inequality join predicates', () => {
+    const p = projection({
+      id: 'indexed-nl-hint-ineq',
+      from: { u: collection('users'), o: collection('orders') },
+      where: { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '>' },
+      select: { id: field('u.#id') },
+      hints: { join: JoinStrategy.IndexedNestedLoop },
+    });
+
+    const planner = new Planner();
+    expect(() => planner.plan(p)).not.toThrow();
+  });
+
   it('emits a warning for cross-product joins', async () => {
     const p = projection({
       id: 'cross-product',

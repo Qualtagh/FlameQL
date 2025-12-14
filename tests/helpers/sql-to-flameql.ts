@@ -1,3 +1,4 @@
+import { WhereFilterOp } from '@google-cloud/firestore';
 import parse from 'sqlite-parser';
 import { collection, field, literal, projection } from '../../src/api/api';
 import { type Expression, type Predicate, Projection } from '../../src/api/expression';
@@ -211,7 +212,7 @@ function toPredicate(node: any, ctx: Context): Predicate {
         case '>=':
         case '<':
         case '<=':
-          return comparison(node.left, node.right, op as any, ctx);
+          return comparison(node.left, node.right, op, ctx);
         case 'in':
           return inList(node.left, node.right, ctx, false);
         case 'not in':
@@ -258,7 +259,7 @@ function inList(
 function comparison(
   leftNode: any,
   rightNode: any,
-  op: any,
+  op: WhereFilterOp,
   ctx: Context
 ): Predicate {
   const left = toExpression(leftNode, ctx);

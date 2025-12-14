@@ -2,6 +2,7 @@ export * from './aggregate';
 export * from './filter';
 export * from './firestore-scan';
 export * from './hash-join';
+export * from './indexed-nested-loop-join';
 export * from './limit';
 export * from './merge-join';
 export * from './nested-loop-join';
