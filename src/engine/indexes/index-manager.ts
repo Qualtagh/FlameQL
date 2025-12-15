@@ -2,7 +2,7 @@ import { Constraint } from '../ast';
 import { SortOrder } from '../operators/operator';
 import { Index, IndexField, IndexFieldMode, QueryScope } from './index-definitions';
 
-interface FirestoreIndexJson {
+export interface FirestoreIndexJson {
   indexes?: Array<{
     collectionGroup: string;
     queryScope: string;
@@ -12,6 +12,7 @@ interface FirestoreIndexJson {
       arrayConfig?: string;
     }>;
   }>;
+  fieldOverrides?: unknown[];
 }
 
 export interface IndexMatch {
@@ -34,34 +35,32 @@ export class IndexManager {
   }
 
   loadFromFirestoreJson(jsonContent: string) {
-    try {
-      const parsed: FirestoreIndexJson = JSON.parse(jsonContent);
+    const parsed: FirestoreIndexJson = JSON.parse(jsonContent);
+    this.loadIndexes(parsed);
+  }
 
-      if (parsed.indexes) {
-        for (const idx of parsed.indexes) {
-          const fields: IndexField[] = idx.fields.map((f) => {
-            let mode: IndexFieldMode = 'ASCENDING';
-            if (f.order === 'DESCENDING') {
-              mode = 'DESCENDING';
-            } else if (f.arrayConfig === 'CONTAINS') {
-              mode = 'ARRAY_CONTAINS';
-            }
-            return {
-              fieldPath: f.fieldPath,
-              mode: mode,
-            };
-          });
+  loadIndexes(parsed: FirestoreIndexJson) {
+    if (parsed.indexes) {
+      for (const idx of parsed.indexes) {
+        const fields: IndexField[] = idx.fields.map((f) => {
+          let mode: IndexFieldMode = 'ASCENDING';
+          if (f.order === 'DESCENDING') {
+            mode = 'DESCENDING';
+          } else if (f.arrayConfig === 'CONTAINS') {
+            mode = 'ARRAY_CONTAINS';
+          }
+          return {
+            fieldPath: f.fieldPath,
+            mode: mode,
+          };
+        });
 
-          this.addIndex({
-            collectionId: idx.collectionGroup,
-            queryScope: idx.queryScope as QueryScope,
-            fields: fields,
-          });
-        }
+        this.addIndex({
+          collectionId: idx.collectionGroup,
+          queryScope: idx.queryScope as QueryScope,
+          fields: fields,
+        });
       }
-    } catch (e) {
-      console.error('Failed to parse firestore.indexes.json', e);
-      throw e;
     }
   }
 

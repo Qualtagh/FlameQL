@@ -1,4 +1,6 @@
+export type { FirestoreIndexJson } from '../engine/indexes/index-manager';
 export { collection, collectionGroup } from './collection';
+export { FlameConfig } from './config';
 export { field } from './field';
 export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode } from './hints';
 export { literal } from './literal';

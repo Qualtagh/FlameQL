@@ -2,13 +2,15 @@ import * as admin from 'firebase-admin';
 import { Executor } from '../engine/executor';
 import { IndexManager } from '../engine/indexes/index-manager';
 import { Planner } from '../engine/planner';
+import { FlameConfig } from './config';
 import { Projection } from './projection';
 
 export interface RunQueryOptions {
   /**
-   * Firestore database instance
+   * Firestore database instance.
+   * If omitted, uses FlameConfig.db.
    */
-  db: admin.firestore.Firestore;
+  db?: admin.firestore.Firestore;
 
   /**
    * Parameters to pass to the projection (for parameterized queries)
@@ -17,6 +19,7 @@ export interface RunQueryOptions {
 
   /**
    * Optional transaction to run the query within
+   * TODO: Implement transaction support
    */
   transaction?: admin.firestore.Transaction;
 }
@@ -35,11 +38,12 @@ export interface RunQueryOptions {
  */
 export async function runQuery(
   projection: Projection,
-  options: RunQueryOptions
+  options: RunQueryOptions = {}
 ): Promise<any[]> {
-  const planner = new Planner();
+  const db = options.db ?? FlameConfig.db;
+  const indexManager = FlameConfig.indexManager ?? new IndexManager();
+  const planner = new Planner(indexManager);
   const plan = planner.plan(projection, options.parameters);
-  const indexManager = new IndexManager();
-  const executor = new Executor(options.db, indexManager);
+  const executor = new Executor(db, indexManager);
   return executor.execute(plan);
 }

@@ -1,0 +1,12 @@
+{
+  "name": "sample-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "generate": "flameql generate",
+    "build": "npm run generate && tsc"
+  },
+  "dependencies": {
+    "flameql": "file:../../../.."
+  }
+}

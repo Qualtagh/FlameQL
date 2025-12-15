@@ -8,6 +8,9 @@
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "flameql": "./dist/cli/flameql.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.test.json --noEmit",
@@ -23,6 +26,7 @@
   "license": "The Unlicense",
   "dependencies": {
     "arktype": "^2.1.28",
+    "commander": "^13.1.0",
     "firebase-admin": "^13.6.0"
   },
   "devDependencies": {
