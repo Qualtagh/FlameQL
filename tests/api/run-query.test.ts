@@ -1,4 +1,4 @@
-import { collection, field, param, projection, runQuery } from '../../src/api/api';
+import { collection, field, inList, literal, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -108,5 +108,26 @@ describe('runQuery API', () => {
     expect(results).toEqual([{ userName: 'Alice' }]);
 
     await expect(runQuery(p, { db, parameters: {} as any })).rejects.toThrow('Parameter "userId" was not provided.');
+  });
+
+  it('supports inList', async () => {
+    await db.collection('users').doc('u1').set({ userId: 1 });
+    await db.collection('users').doc('u2').set({ userId: 2 });
+    await db.collection('users').doc('u3').set({ userId: 3 });
+
+    await db.collection('customers').doc('c1').set({ userId: 2 });
+
+    const p = projection({
+      id: 'inlist',
+      from: { u: collection('users'), c: collection('customers') },
+      select: { userId: field('u.userId'), customerUserId: field('c.userId') },
+      where: inList(field('u.userId'), [literal(1), param('allowedUserId'), literal(2)]),
+    });
+
+    const results = await runQuery(p, { db, parameters: { allowedUserId: 4 } });
+
+    const userIds = results.map(r => r.userId).sort();
+    expect(userIds).toEqual([1, 2]);
+    expect(results.every(r => r.customerUserId === 2)).toBe(true);
   });
 });

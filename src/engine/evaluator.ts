@@ -33,7 +33,9 @@ export function evaluatePredicate(predicate: Predicate, row: any): boolean {
   switch (predicate.type) {
     case 'COMPARISON': {
       const left = evaluate(predicate.left, row);
-      const right = evaluate(predicate.right, row);
+      const right = Array.isArray(predicate.right)
+        ? predicate.right.map(expr => evaluate(expr, row))
+        : evaluate(predicate.right, row);
       const comparator = createOperationComparator(predicate.operation);
       return comparator(left, right);
     }

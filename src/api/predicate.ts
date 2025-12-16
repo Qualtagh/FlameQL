@@ -14,7 +14,7 @@ export const { expression: expressionType, predicate: predicateType } = type.mod
   COMPARISON: {
     type: "'COMPARISON'",
     left: 'expression',
-    right: 'expression',
+    right: 'expression | expression[]',
     operation: 'whereFilterOp',
   },
   AND: {
@@ -67,6 +67,22 @@ export function gte(left: Expression, right: Expression): ComparisonPredicate {
   return comparison('>=', left, right);
 }
 
+export function arrayContains(left: Expression, right: Expression): ComparisonPredicate {
+  return comparison('array-contains', left, right);
+}
+
+export function inList(left: Expression, right: Expression[]): ComparisonPredicate {
+  return comparison('in', left, right);
+}
+
+export function notInList(left: Expression, right: Expression[]): ComparisonPredicate {
+  return comparison('not-in', left, right);
+}
+
+export function arrayContainsAny(left: Expression, right: Expression[]): ComparisonPredicate {
+  return comparison('array-contains-any', left, right);
+}
+
 export function and(conditions: Predicate[]): CompositePredicate {
   return { type: 'AND', conditions };
 }
@@ -83,6 +99,10 @@ export function constant(value: boolean): ConstantPredicate {
   return { type: 'CONSTANT', value };
 }
 
-function comparison(operation: WhereFilterOp, left: Expression, right: Expression): ComparisonPredicate {
+function comparison(
+  operation: WhereFilterOp,
+  left: Expression,
+  right: Expression | Expression[]
+): ComparisonPredicate {
   return { type: 'COMPARISON', operation, left, right };
 }

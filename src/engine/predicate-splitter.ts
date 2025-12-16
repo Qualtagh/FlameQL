@@ -82,7 +82,12 @@ export class PredicateSplitter {
     }
   }
 
-  private collectFromExpression(expr: Expression, sources: string[], involved: Set<string>) {
+  private collectFromExpression(expr: Expression | Expression[], sources: string[], involved: Set<string>) {
+    if (Array.isArray(expr)) {
+      expr.forEach(item => this.collectFromExpression(item, sources, involved));
+      return;
+    }
+
     if (expr.kind === 'Field') {
       this.assertKnownAlias(expr, sources);
       if (expr.source) {

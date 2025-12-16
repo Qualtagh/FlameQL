@@ -19,7 +19,7 @@ export interface ExecutionNode {
 export interface Constraint {
   field: Field;
   op: WhereFilterOp;
-  value: Literal;
+  value: Literal | Literal[];
 }
 
 export interface ScanNode extends ExecutionNode {

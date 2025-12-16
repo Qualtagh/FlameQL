@@ -271,7 +271,7 @@ function predicatesEqual(a: Predicate, b: Predicate): boolean {
     case 'COMPARISON': {
       const bComp = b as ComparisonPredicate;
       return expressionsEqual(a.left, bComp.left) &&
-        expressionsEqual(a.right, bComp.right) &&
+        expressionsOrListEqual(a.right, bComp.right) &&
         a.operation === bComp.operation;
     }
     case 'NOT':
@@ -306,6 +306,23 @@ function expressionsEqual(a: Expression, b: Expression): boolean {
       return paramA.name === paramB.name;
     }
   }
+}
+
+function expressionsOrListEqual(a: Expression | Expression[], b: Expression | Expression[]): boolean {
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+
+  if (aIsArray || bIsArray) {
+    if (!aIsArray || !bIsArray) return false;
+    return expressionsArrayEqual(a, b);
+  }
+
+  return expressionsEqual(a, b);
+}
+
+function expressionsArrayEqual(left: Expression[], right: Expression[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((expr, idx) => expressionsEqual(expr, right[idx]));
 }
 
 function arrayEquals(left: unknown[], right: unknown[]): boolean {

@@ -113,7 +113,7 @@ function compileConstraints(constraints: Constraint[]): FirestoreWhereConstraint
   return constraints.map(c => ({
     fieldPath: c.field.path.join('.'),
     op: c.op,
-    value: c.value.value,
+    value: Array.isArray(c.value) ? c.value.map(v => v.value) : c.value.value,
   }));
 }
 

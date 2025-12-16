@@ -301,6 +301,11 @@ export class Planner {
   }
 
   private exprKey(e: any): string {
+    if (Array.isArray(e)) {
+      const parts = e.map(item => this.exprKey(item));
+      return `A:${parts.join('|')}`;
+    }
+
     if (!e || typeof e !== 'object') return `X:${String(e)}`;
     switch (e.kind) {
       case 'Field':
@@ -397,12 +402,18 @@ export class Planner {
 
     if (predicate.type === 'COMPARISON') {
       const field = this.asField(predicate.left);
-      const literal = predicate.right.kind === 'Literal' ? predicate.right : null;
-      if (field && literal) {
+      const literal = !Array.isArray(predicate.right) && predicate.right.kind === 'Literal'
+        ? predicate.right
+        : null;
+      const literalList = Array.isArray(predicate.right) && predicate.right.every(item => item.kind === 'Literal')
+        ? predicate.right
+        : null;
+
+      if (field && (literal || literalList)) {
         constraints.push({
           field,
           op: predicate.operation,
-          value: literal,
+          value: literal ?? literalList!,
         });
       } else {
         nonIndexable += 1;
@@ -723,6 +734,7 @@ export class Planner {
 
   private orientJoinPredicateForSides(predicate: Predicate, leftAliases: Set<string>, rightAliases: Set<string>): Predicate {
     if (predicate.type !== 'COMPARISON') return predicate;
+    if (Array.isArray(predicate.left) || Array.isArray(predicate.right)) return predicate;
 
     const leftField = this.asField(predicate.left);
     const rightField = this.asField(predicate.right);
@@ -901,7 +913,9 @@ export class Planner {
           type: 'COMPARISON',
           operation: predicate.operation,
           left: this.normalizeExpression(predicate.left, aliases),
-          right: this.normalizeExpression(predicate.right, aliases),
+          right: Array.isArray(predicate.right)
+            ? predicate.right.map(expr => this.normalizeExpression(expr, aliases))
+            : this.normalizeExpression(predicate.right, aliases),
         };
       case 'AND':
       case 'OR':
