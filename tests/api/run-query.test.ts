@@ -107,10 +107,10 @@ describe('runQuery API', () => {
     const results = await runQuery(p, { db, parameters: { userId: 'u1' } });
     expect(results).toEqual([{ userName: 'Alice' }]);
 
-    await expect(runQuery(p, { db, parameters: {} as any })).rejects.toThrow('Parameter "userId" was not provided.');
+    await expect(runQuery(p, { db, parameters: {} })).rejects.toThrow('Parameter "userId" was not provided.');
   });
 
-  it('supports inList', async () => {
+  it('supports inList (basic)', async () => {
     await db.collection('users').doc('u1').set({ userId: 1 });
     await db.collection('users').doc('u2').set({ userId: 2 });
     await db.collection('users').doc('u3').set({ userId: 3 });
@@ -122,6 +122,27 @@ describe('runQuery API', () => {
       from: { u: collection('users'), c: collection('customers') },
       select: { userId: field('u.userId'), customerUserId: field('c.userId') },
       where: inList(field('u.userId'), [literal(1), param('allowedUserId'), literal(2)]),
+    });
+
+    const results = await runQuery(p, { db, parameters: { allowedUserId: 4 } });
+
+    const userIds = results.map(r => r.userId).sort();
+    expect(userIds).toEqual([1, 2]);
+    expect(results.every(r => r.customerUserId === 2)).toBe(true);
+  });
+
+  it('supports inList with mixed expressions on join rows', async () => {
+    await db.collection('users').doc('u1').set({ userId: 1 });
+    await db.collection('users').doc('u2').set({ userId: 2 });
+    await db.collection('users').doc('u3').set({ userId: 3 });
+
+    await db.collection('customers').doc('c1').set({ userId: 2 });
+
+    const p = projection({
+      id: 'inlist-mixed',
+      from: { u: collection('users'), c: collection('customers') },
+      select: { userId: field('u.userId'), customerUserId: field('c.userId') },
+      where: inList(field('u.userId'), [literal(1), param('allowedUserId'), field('c.userId')]),
     });
 
     const results = await runQuery(p, { db, parameters: { allowedUserId: 4 } });

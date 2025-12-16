@@ -47,10 +47,21 @@ export class PreparedFirestoreScan {
     } = opts ?? {};
 
     const scan = this.plan.scan;
-    const where = [
+    const combinedWhere = [
       ...includeBaseWhere ? this.plan.baseWhere : [],
       ...extraWhere,
     ];
+
+    // Firestore allows at most one membership filter per query; keep the first and evaluate the rest in-memory.
+    const where: FirestoreWhereConstraint[] = [];
+    let membershipUsed = false;
+    for (const constraint of combinedWhere) {
+      if (isMembershipConstraint(constraint)) {
+        if (membershipUsed) continue;
+        membershipUsed = true;
+      }
+      where.push(constraint);
+    }
 
     const resolvedOrderBy: FirestoreOrderBy[] | undefined = orderBy ?? (
       includeScanOrderBy && scan.orderBy && scan.orderBy.length > 0
@@ -126,4 +137,8 @@ function predicateFromConstraints(constraints: Constraint[]): Predicate {
     right: c.value,
   }));
   return conditions.length === 1 ? conditions[0] : { type: 'AND', conditions };
+}
+
+function isMembershipConstraint(constraint: FirestoreWhereConstraint): boolean {
+  return constraint.op === 'in' || constraint.op === 'not-in' || constraint.op === 'array-contains-any';
 }

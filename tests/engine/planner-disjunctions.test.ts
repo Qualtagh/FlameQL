@@ -12,7 +12,7 @@ describe('Planner disjunction handling', () => {
         type: 'OR',
         conditions: [
           { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-          { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(30) },
+          { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
         ],
       },
       select: { id: field('u.#id') },
@@ -44,7 +44,7 @@ describe('Planner disjunction handling', () => {
         type: 'OR',
         conditions: [
           { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-          { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(30) },
+          { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
         ],
       },
       select: { id: field('u.#id') },
@@ -137,7 +137,7 @@ describe('Planner disjunction handling', () => {
             type: 'AND',
             conditions: [
               { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(30) },
+              { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
             ],
           },
         ],
@@ -173,7 +173,7 @@ describe('Planner disjunction handling', () => {
             type: 'AND',
             conditions: [
               { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(30) },
+              { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
             ],
           },
         ],

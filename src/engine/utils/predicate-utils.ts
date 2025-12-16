@@ -1,4 +1,9 @@
 import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
+import { invertComparisonOp } from './operation-comparator';
+
+const IN_LIST_MAX = 30;
+const NOT_IN_LIST_MAX = 30;
+const ARRAY_CONTAINS_ANY_MAX = 10;
 
 /**
  * Simplifies a predicate by applying logical rules:
@@ -24,16 +29,99 @@ export function simplifyPredicate(predicate: Predicate): Predicate {
 function simplifyOnce(predicate: Predicate): Predicate {
   switch (predicate.type) {
     case 'CONSTANT':
-    case 'COMPARISON':
       return predicate;
-
+    case 'COMPARISON':
+      return simplifyComparison(predicate);
     case 'NOT':
       return simplifyNot(predicate);
-
     case 'AND':
     case 'OR':
       return simplifyComposite(predicate);
+    default:
+      predicate satisfies never;
+      throw new Error(`Unsupported predicate type: ${predicate}`);
   }
+}
+
+function simplifyComparison(predicate: ComparisonPredicate): Predicate {
+  let cmp = normalizeComparisonOperands(predicate);
+
+  // Literal folding (incl. list comparisons)
+  const folded = evaluateComparisonIfLiteral(cmp);
+  if (folded) {
+    return folded;
+  }
+
+  // Right-side list handling
+  if (Array.isArray(cmp.right)) {
+    const { fields, others } = partitionListByField(cmp.right);
+
+    if (cmp.operation === 'array-contains-any' && fields.length > 0) {
+      throw new Error('array-contains-any with a Field on the right side is unsupported without schema information.');
+    }
+
+    if (cmp.operation === 'in' && fields.length > 0) {
+      const parts: Predicate[] = [];
+      if (others.length > 0) {
+        parts.push(simplifyComparison({ ...cmp, right: dedupeExpressions(others) }));
+      }
+      for (const f of fields) {
+        parts.push({ type: 'COMPARISON', operation: '==', left: cmp.left, right: f });
+      }
+      return simplifyComposite({ type: 'OR', conditions: parts });
+    }
+
+    if (cmp.operation === 'not-in' && fields.length > 0) {
+      const parts: Predicate[] = [];
+      if (others.length > 0) {
+        parts.push(simplifyComparison({ ...cmp, right: dedupeExpressions(others) }));
+      }
+      for (const f of fields) {
+        parts.push({ type: 'COMPARISON', operation: '!=', left: cmp.left, right: f });
+      }
+      return simplifyComposite({ type: 'AND', conditions: parts });
+    }
+
+    cmp = { ...cmp, right: dedupeExpressions(others.length ? others : cmp.right) };
+  }
+
+  // Empty list fast-paths
+  if (Array.isArray(cmp.right) && cmp.right.length === 0) {
+    switch (cmp.operation) {
+      case 'in':
+        return { type: 'CONSTANT', value: false };
+      case 'not-in':
+        return { type: 'CONSTANT', value: true };
+      case 'array-contains-any':
+        return { type: 'CONSTANT', value: false };
+    }
+  }
+
+  // Single-element list simplifications
+  if (Array.isArray(cmp.right) && cmp.right.length === 1) {
+    const only = cmp.right[0];
+    if (isLiteralExpr(only)) {
+      if (cmp.operation === 'in') {
+        return simplifyComparison({ type: 'COMPARISON', operation: '==', left: cmp.left, right: only });
+      }
+      if (cmp.operation === 'not-in') {
+        return simplifyComparison({ type: 'COMPARISON', operation: '!=', left: cmp.left, right: only });
+      }
+      if (cmp.operation === 'array-contains-any') {
+        return simplifyComparison({ type: 'COMPARISON', operation: 'array-contains', left: cmp.left, right: only });
+      }
+    }
+  }
+
+  // Split oversized lists for Firestore limits
+  if (Array.isArray(cmp.right)) {
+    const limit = getListLimit(cmp.operation);
+    if (limit !== undefined && cmp.right.length > limit) {
+      return splitListComparison(cmp, limit);
+    }
+  }
+
+  return cmp;
 }
 
 function simplifyNot(predicate: NotPredicate): Predicate {
@@ -91,6 +179,16 @@ function simplifyComposite(predicate: CompositePredicate): Predicate {
     }
     return true;
   });
+
+  // Merge membership/scalar rules before duplicate removal to enable aggregation
+  if (type === 'AND') {
+    conditions = mergeAndConditions(conditions);
+    if (conditions.length === 1) {
+      return conditions[0];
+    }
+  } else {
+    conditions = mergeOrConditions(conditions);
+  }
 
   // Remove duplicates: A AND A => A, A OR A => A
   const unique: Predicate[] = [];
@@ -154,6 +252,608 @@ function simplifyComposite(predicate: CompositePredicate): Predicate {
   }
 
   return { type, conditions };
+}
+
+function mergeOrConditions(conditions: Predicate[]): Predicate[] {
+  const result: Predicate[] = [];
+  const processed = new Array(conditions.length).fill(false);
+
+  for (let i = 0; i < conditions.length; i++) {
+    if (processed[i]) continue;
+
+    const current = conditions[i];
+    const { base, membership } = splitBaseAndMembership(current);
+
+    if (!membership) {
+      result.push(current);
+      processed[i] = true;
+      continue;
+    }
+
+    const baseKey = predicatesListKey(base);
+    const familyLimit = membership.kind === 'in' ? IN_LIST_MAX : ARRAY_CONTAINS_ANY_MAX;
+    const mergedValues = [...membership.values];
+    const groupIndices: number[] = [i];
+
+    for (let j = i + 1; j < conditions.length; j++) {
+      if (processed[j]) continue;
+      const candidate = splitBaseAndMembership(conditions[j]);
+      if (!candidate.membership) continue;
+      if (candidate.membership.kind !== membership.kind) continue;
+      if (candidate.membership.fieldKey !== membership.fieldKey) continue;
+      if (predicatesListKey(candidate.base) !== baseKey) continue;
+
+      groupIndices.push(j);
+      for (const v of candidate.membership.values) {
+        pushUniqueExpression(mergedValues, v);
+      }
+    }
+
+    // No merge opportunities; preserve original condition to avoid reordering churn.
+    if (groupIndices.length === 1) {
+      result.push(current);
+      processed[i] = true;
+      continue;
+    }
+
+    if (familyLimit && mergedValues.length > familyLimit) {
+      // Do not merge to avoid exceeding Firestore limits; keep the first as-is.
+      result.push(current);
+      processed[i] = true;
+      continue;
+    }
+
+    const mergedMembership = buildMembershipPredicate(membership.field, membership.kind, mergedValues);
+    const combined = base.length > 0
+      ? simplifyComposite({ type: 'AND', conditions: [...base, mergedMembership] })
+      : mergedMembership;
+
+    result.push(combined);
+    groupIndices.forEach(idx => processed[idx] = true);
+  }
+
+  // Scalar OR rewrite: (< A || > A) -> != A (same field & literal)
+  // Also canonicalizes (=< or =>) paired with equality when possible.
+  return rewriteScalarOr(result);
+}
+
+function mergeAndConditions(conditions: Predicate[]): Predicate[] {
+  interface FieldBucket {
+    field: Field;
+    firstIndex: number;
+    eq?: Literal;
+    neqValues: Literal[];
+    notInValues: Literal[];
+    inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>;
+    others: Predicate[];
+    contradiction?: boolean;
+  }
+
+  const buckets = new Map<string, FieldBucket>();
+  const bucketOrder: string[] = [];
+  const passthrough: Array<{ index: number; predicate: Predicate }> = [];
+
+  for (let i = 0; i < conditions.length; i++) {
+    const cond = conditions[i];
+    if (cond.type !== 'COMPARISON') {
+      passthrough.push({ index: i, predicate: cond });
+      continue;
+    }
+
+    const field = asField(cond.left);
+    if (!field) {
+      passthrough.push({ index: i, predicate: cond });
+      continue;
+    }
+
+    const key = fieldKey(field);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        field,
+        firstIndex: i,
+        neqValues: [],
+        notInValues: [],
+        inequalities: [],
+        others: [],
+      };
+      buckets.set(key, bucket);
+      bucketOrder.push(key);
+    } else {
+      bucket.firstIndex = Math.min(bucket.firstIndex, i);
+    }
+
+    const right = cond.right;
+    switch (cond.operation) {
+      case '==':
+        if (!Array.isArray(right) && isLiteralExpr(right)) {
+          if (bucket.eq && !expressionsEqual(bucket.eq, right)) {
+            bucket.contradiction = true;
+          } else {
+            bucket.eq = right;
+          }
+        } else {
+          bucket.others.push(cond);
+        }
+        break;
+      case '!=':
+        if (!Array.isArray(right) && isLiteralExpr(right)) {
+          pushUniqueExpression(bucket.neqValues, right);
+        } else {
+          bucket.others.push(cond);
+        }
+        break;
+      case 'not-in':
+        if (Array.isArray(right) && right.every(isLiteralExpr)) {
+          right.forEach(r => pushUniqueExpression(bucket.notInValues, r));
+        } else {
+          bucket.others.push(cond);
+        }
+        break;
+      case '<':
+      case '<=':
+      case '>':
+      case '>=':
+        if (!Array.isArray(right) && isLiteralExpr(right)) {
+          bucket.inequalities.push({ op: cond.operation, right });
+        } else {
+          bucket.others.push(cond);
+        }
+        break;
+      default:
+        bucket.others.push(cond);
+        break;
+    }
+  }
+
+  const assembled: Array<{ index: number; predicates: Predicate[] }> = [];
+
+  for (const key of bucketOrder) {
+    const bucket = buckets.get(key)!;
+    if (bucket.contradiction) {
+      return [{ type: 'CONSTANT', value: false }];
+    }
+
+    const built = buildBucketPredicates(bucket);
+    if (built.contradiction) {
+      return [{ type: 'CONSTANT', value: false }];
+    }
+    assembled.push({ index: bucket.firstIndex, predicates: built.predicates });
+  }
+
+  passthrough.forEach(item => assembled.push({ index: item.index, predicates: [item.predicate] }));
+  assembled.sort((a, b) => a.index - b.index);
+
+  return assembled.flatMap(e => e.predicates);
+}
+
+function buildBucketPredicates(bucket: {
+  field: Field;
+  eq?: Literal;
+  neqValues: Literal[];
+  notInValues: Literal[];
+  inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>;
+  others: Predicate[];
+}): { predicates: Predicate[]; contradiction?: boolean } {
+  // If we have equality, validate it against other constraints and keep only the equality + others.
+  if (bucket.eq) {
+    const eqExpr = bucket.eq;
+
+    // Equality clashes with != or not-in
+    if (bucket.neqValues.some(v => expressionsEqual(v, eqExpr))) {
+      return { predicates: [], contradiction: true };
+    }
+    if (bucket.notInValues.some(v => expressionsEqual(v, eqExpr))) {
+      return { predicates: [], contradiction: true };
+    }
+
+    // Equality must satisfy all inequalities
+    for (const ineq of bucket.inequalities) {
+      if (!evaluateLiteralVsLiteral(eqExpr, ineq.op, ineq.right)) {
+        return { predicates: [], contradiction: true };
+      }
+    }
+
+    // Equality dominates scalar inequalities and NE constraints.
+    return {
+      predicates: [
+        { type: 'COMPARISON', operation: '==', left: bucket.field, right: eqExpr },
+        ...bucket.others,
+      ],
+    };
+  }
+
+  // Combine != and not-in into a single not-in when possible.
+  const negativeValues = dedupeExpressions([...bucket.neqValues, ...bucket.notInValues]);
+  const predicates: Predicate[] = [];
+
+  if (negativeValues.length === 1) {
+    predicates.push({ type: 'COMPARISON', operation: '!=', left: bucket.field, right: negativeValues[0] });
+  } else if (negativeValues.length > 1) {
+    const limit = NOT_IN_LIST_MAX;
+    if (negativeValues.length > limit) {
+      const chunks = chunkArray(negativeValues, limit);
+      for (const chunk of chunks) {
+        if (chunk.length === 1) {
+          predicates.push({ type: 'COMPARISON', operation: '!=', left: bucket.field, right: chunk[0] });
+        } else {
+          predicates.push({ type: 'COMPARISON', operation: 'not-in', left: bucket.field, right: chunk });
+        }
+      }
+    } else {
+      predicates.push({ type: 'COMPARISON', operation: 'not-in', left: bucket.field, right: negativeValues });
+    }
+  }
+
+  const inequalityResult = reduceInequalities(bucket.inequalities, bucket.field);
+  if (inequalityResult.contradiction) {
+    return { predicates: [], contradiction: true };
+  }
+  predicates.push(...inequalityResult.predicates);
+  predicates.push(...bucket.others);
+
+  return { predicates };
+}
+
+function reduceInequalities(
+  inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>,
+  field: Field
+): { predicates: Predicate[]; contradiction?: boolean } {
+  if (inequalities.length === 0) {
+    return { predicates: [] };
+  }
+
+  type Bound = { value: any; inclusive: boolean; literal: Literal };
+  let lower: Bound | undefined;
+  let upper: Bound | undefined;
+
+  for (const ineq of inequalities) {
+    const value = ineq.right.value as any;
+    if (ineq.op === '>' || ineq.op === '>=') {
+      const candidate: Bound = { value, inclusive: ineq.op === '>=', literal: ineq.right };
+      if (!lower || value > lower.value || value === lower.value && !lower.inclusive && candidate.inclusive) {
+        lower = candidate;
+      }
+    } else if (ineq.op === '<' || ineq.op === '<=') {
+      const candidate: Bound = { value, inclusive: ineq.op === '<=', literal: ineq.right };
+      if (!upper || value < upper.value || value === upper.value && !upper.inclusive && candidate.inclusive) {
+        upper = candidate;
+      }
+    }
+  }
+
+  if (lower && upper) {
+    if (lower.value > upper.value) {
+      return { predicates: [], contradiction: true };
+    }
+    if (lower.value === upper.value) {
+      if (lower.inclusive && upper.inclusive) {
+        return {
+          predicates: [{ type: 'COMPARISON', operation: '==', left: field, right: lower.literal }],
+        };
+      }
+      return { predicates: [], contradiction: true };
+    }
+  }
+
+  const predicates: Predicate[] = [];
+  if (lower) {
+    predicates.push({
+      type: 'COMPARISON',
+      operation: lower.inclusive ? '>=' : '>',
+      left: field,
+      right: lower.literal,
+    });
+  }
+  if (upper) {
+    predicates.push({
+      type: 'COMPARISON',
+      operation: upper.inclusive ? '<=' : '<',
+      left: field,
+      right: upper.literal,
+    });
+  }
+
+  return { predicates };
+}
+
+function rewriteScalarOr(conditions: Predicate[]): Predicate[] {
+  const processed = new Array(conditions.length).fill(false);
+  const result: Predicate[] = [];
+
+  for (let i = 0; i < conditions.length; i++) {
+    if (processed[i]) continue;
+    const first = conditions[i];
+    if (first.type === 'COMPARISON') {
+      const field = asField(first.left);
+      const right = first.right;
+      if (field && !Array.isArray(right) && isLiteralExpr(right) && (first.operation === '<' || first.operation === '>')) {
+        const peers: number[] = [];
+        for (let j = i + 1; j < conditions.length; j++) {
+          if (processed[j]) continue;
+          const other = conditions[j];
+          if (other.type !== 'COMPARISON') continue;
+          const otherField = asField(other.left);
+          if (!otherField || !fieldsEqual(field, otherField)) continue;
+          if (Array.isArray(other.right) || !isLiteralExpr(other.right)) continue;
+          if (!expressionsEqual(right, other.right)) continue;
+          if (first.operation === '<' && other.operation === '>' || first.operation === '>' && other.operation === '<') {
+            peers.push(j);
+            const merged: ComparisonPredicate = { type: 'COMPARISON', operation: '!=', left: field, right };
+            result.push(merged);
+            processed[i] = true;
+            peers.forEach(idx => processed[idx] = true);
+            break;
+          }
+        }
+        if (processed[i]) {
+          continue;
+        }
+      }
+    }
+
+    result.push(first);
+    processed[i] = true;
+  }
+
+  return result;
+}
+
+function splitBaseAndMembership(predicate: Predicate): { base: Predicate[]; membership?: MembershipInfo } {
+  const conjuncts = predicate.type === 'AND' ? predicate.conditions : [predicate];
+  const base: Predicate[] = [];
+  const memberships: Array<{ info: MembershipInfo; predicate: Predicate }> = [];
+
+  for (const cond of conjuncts) {
+    const m = asMembership(cond);
+    if (m) {
+      memberships.push({ info: m, predicate: cond });
+    } else {
+      base.push(cond);
+    }
+  }
+
+  if (memberships.length === 0) {
+    return { base, membership: undefined };
+  }
+
+  const chosen = memberships.find(m => m.info.op !== '==') ?? memberships[memberships.length - 1];
+  const membership = chosen.info;
+  const baseWithOthers = [
+    ...base,
+    ...memberships.filter(m => m !== chosen).map(m => m.predicate),
+  ];
+
+  return { base: baseWithOthers, membership };
+}
+
+type MembershipKind = 'in' | 'array';
+interface MembershipInfo {
+  field: Field;
+  fieldKey: string;
+  kind: MembershipKind;
+  values: Expression[];
+  op: ComparisonPredicate['operation'];
+}
+
+function asMembership(predicate: Predicate): MembershipInfo | undefined {
+  if (predicate.type !== 'COMPARISON') return undefined;
+  const field = asField(predicate.left);
+  if (!field) return undefined;
+
+  switch (predicate.operation) {
+    case '==':
+      if (isFieldExpr(predicate.right as Expression)) return undefined;
+      return { field, fieldKey: fieldKey(field), kind: 'in', values: [predicate.right as Expression], op: predicate.operation };
+    case 'in':
+      if (Array.isArray(predicate.right) && predicate.right.every(v => !isFieldExpr(v))) {
+        return { field, fieldKey: fieldKey(field), kind: 'in', values: predicate.right, op: predicate.operation };
+      }
+      return undefined;
+    case 'array-contains':
+      if (isFieldExpr(predicate.right as Expression)) return undefined;
+      return { field, fieldKey: fieldKey(field), kind: 'array', values: [predicate.right as Expression], op: predicate.operation };
+    case 'array-contains-any':
+      if (Array.isArray(predicate.right) && predicate.right.every(v => !isFieldExpr(v))) {
+        return { field, fieldKey: fieldKey(field), kind: 'array', values: predicate.right, op: predicate.operation };
+      }
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+function buildMembershipPredicate(field: Field, kind: MembershipKind, values: Expression[]): Predicate {
+  const deduped = dedupeExpressions(values);
+  if (kind === 'in') {
+    if (deduped.length === 1) {
+      return { type: 'COMPARISON', operation: '==', left: field, right: deduped[0] };
+    }
+    return { type: 'COMPARISON', operation: 'in', left: field, right: deduped };
+  }
+
+  if (deduped.length === 1) {
+    return { type: 'COMPARISON', operation: 'array-contains', left: field, right: deduped[0] };
+  }
+  return { type: 'COMPARISON', operation: 'array-contains-any', left: field, right: deduped };
+}
+
+function normalizeComparisonOperands(predicate: ComparisonPredicate): ComparisonPredicate {
+  const rightIsList = Array.isArray(predicate.right);
+  const leftField = asField(predicate.left);
+  const rightField = rightIsList ? null : asField(predicate.right as Expression);
+
+  if (!leftField && rightField && !rightIsList) {
+    const inverted = invertComparisonOp(predicate.operation);
+    if (inverted) {
+      return {
+        type: 'COMPARISON',
+        operation: inverted,
+        left: predicate.right as Expression,
+        right: predicate.left,
+      };
+    }
+  }
+
+  return predicate;
+}
+
+function evaluateComparisonIfLiteral(predicate: ComparisonPredicate): Predicate | null {
+  const leftLit = asLiteral(predicate.left);
+  const right = predicate.right;
+
+  let rightLit = false;
+  let rightVal: any;
+
+  if (Array.isArray(right)) {
+    rightLit = right.every(isLiteralExpr);
+    if (rightLit) {
+      rightVal = (right as Literal[]).map(r => r.value);
+    }
+  } else {
+    rightLit = isLiteralExpr(right);
+    if (rightLit) {
+      rightVal = (right as Literal).value;
+    }
+  }
+
+  if (!leftLit || !rightLit) {
+    return null;
+  }
+
+  const leftVal = leftLit.value!;
+
+  let result: boolean;
+  switch (predicate.operation) {
+    case '==':
+      result = leftVal == rightVal;
+      break;
+    case '!=':
+      result = leftVal != rightVal;
+      break;
+    case '<':
+      result = leftVal < rightVal;
+      break;
+    case '<=':
+      result = leftVal <= rightVal;
+      break;
+    case '>':
+      result = leftVal > rightVal;
+      break;
+    case '>=':
+      result = leftVal >= rightVal;
+      break;
+    case 'in':
+      if (!Array.isArray(rightVal)) return null;
+      result = rightVal.includes(leftVal);
+      break;
+    case 'not-in':
+      if (!Array.isArray(rightVal)) return null;
+      result = !rightVal.includes(leftVal);
+      break;
+    case 'array-contains':
+      if (!Array.isArray(leftVal)) return { type: 'CONSTANT', value: false };
+      result = leftVal.includes(rightVal);
+      break;
+    case 'array-contains-any':
+      if (!Array.isArray(leftVal) || !Array.isArray(rightVal)) return { type: 'CONSTANT', value: false };
+      {
+        const set = new Set(leftVal);
+        result = rightVal.some(v => set.has(v));
+      }
+      break;
+    default:
+      return null;
+  }
+
+  return { type: 'CONSTANT', value: result };
+}
+
+function partitionListByField(items: Expression[]): { fields: Expression[]; others: Expression[] } {
+  const fields: Expression[] = [];
+  const others: Expression[] = [];
+  for (const item of items) {
+    if (isFieldExpr(item)) {
+      fields.push(item);
+    } else {
+      others.push(item);
+    }
+  }
+  return { fields, others };
+}
+
+function dedupeExpressions(list: Expression[]): Expression[] {
+  const out: Expression[] = [];
+  list.forEach(expr => pushUniqueExpression(out, expr));
+  return out;
+}
+
+function pushUniqueExpression(list: Expression[], expr: Expression) {
+  if (!list.some(e => expressionsEqual(e, expr))) {
+    list.push(expr);
+  }
+}
+
+function getListLimit(op: ComparisonPredicate['operation']): number | undefined {
+  switch (op) {
+    case 'in':
+      return IN_LIST_MAX;
+    case 'not-in':
+      return NOT_IN_LIST_MAX;
+    case 'array-contains-any':
+      return ARRAY_CONTAINS_ANY_MAX;
+    default:
+      return undefined;
+  }
+}
+
+function splitListComparison(predicate: ComparisonPredicate, limit: number): Predicate {
+  const right = predicate.right;
+  if (!Array.isArray(right)) {
+    return predicate;
+  }
+
+  const chunks = chunkArray(right, limit);
+  const comparisons = chunks.map(chunk => ({ ...predicate, right: chunk }));
+
+  if (predicate.operation === 'not-in') {
+    return simplifyComposite({ type: 'AND', conditions: comparisons });
+  }
+
+  return simplifyComposite({ type: 'OR', conditions: comparisons });
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+function evaluateLiteralVsLiteral(
+  left: Literal,
+  op: ComparisonPredicate['operation'],
+  right: Literal
+): boolean {
+  const leftVal = left.value as any;
+  const rightVal = right.value as any;
+  switch (op) {
+    case '==':
+      return leftVal == rightVal;
+    case '!=':
+      return leftVal != rightVal;
+    case '<':
+      return leftVal < rightVal;
+    case '<=':
+      return leftVal <= rightVal;
+    case '>':
+      return leftVal > rightVal;
+    case '>=':
+      return leftVal >= rightVal;
+    default:
+      return true;
+  }
 }
 
 /**
@@ -285,6 +985,41 @@ function predicatesEqual(a: Predicate, b: Predicate): boolean {
   }
 }
 
+function predicateKey(p: Predicate): string {
+  switch (p.type) {
+    case 'CONSTANT':
+      return `C:${p.value}`;
+    case 'COMPARISON':
+      return `CMP:${p.operation}:${exprKey(p.left)}:${Array.isArray(p.right) ? '[' + p.right.map(exprKey).join(',') + ']' : exprKey(p.right)}`;
+    case 'NOT':
+      return `NOT:${predicateKey(p.operand)}`;
+    case 'AND':
+      return `AND:${p.conditions.map(predicateKey).sort().join('|')}`;
+    case 'OR':
+      return `OR:${p.conditions.map(predicateKey).sort().join('|')}`;
+    default:
+      return 'UNKNOWN';
+  }
+}
+
+function predicatesListKey(list: Predicate[]): string {
+  if (list.length === 0) return 'EMPTY';
+  return list.map(predicateKey).sort().join('|');
+}
+
+function exprKey(expr: Expression): string {
+  if (isFieldExpr(expr)) {
+    return `F:${expr.source ?? ''}:${expr.path.join('.')}`;
+  }
+  if (isLiteralExpr(expr)) {
+    return `L:${(expr as Literal).value}`;
+  }
+  if (expr.kind === 'Param') {
+    return `P:${(expr as Param).name}`;
+  }
+  return 'UNK';
+}
+
 function expressionsEqual(a: Expression, b: Expression): boolean {
   if (a === b) return true;
   if (a.kind !== b.kind) return false;
@@ -328,4 +1063,28 @@ function expressionsArrayEqual(left: Expression[], right: Expression[]): boolean
 function arrayEquals(left: unknown[], right: unknown[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((value, idx) => value === right[idx]);
+}
+
+function isFieldExpr(expr: Expression): expr is Field {
+  return expr?.kind === 'Field';
+}
+
+function asField(expr: Expression): Field | null {
+  return isFieldExpr(expr) ? expr as Field : null;
+}
+
+function isLiteralExpr(expr: Expression): expr is Literal {
+  return expr?.kind === 'Literal';
+}
+
+function asLiteral(expr: Expression): Literal | null {
+  return isLiteralExpr(expr) ? expr as Literal : null;
+}
+
+function fieldKey(field: Field): string {
+  return `${field.source ?? ''}:${field.path.join('.')}`;
+}
+
+function fieldsEqual(a: Field, b: Field): boolean {
+  return fieldKey(a) === fieldKey(b);
 }

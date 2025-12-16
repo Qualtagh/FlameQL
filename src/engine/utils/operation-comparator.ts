@@ -69,6 +69,7 @@ export function createOperationComparator(
       };
 
     default:
+      operation satisfies never;
       throw new Error(`Unsupported operation: ${operation}`);
   }
 }

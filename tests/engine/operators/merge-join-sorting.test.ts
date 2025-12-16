@@ -34,8 +34,8 @@ describe('MergeJoinOperator (sorting behavior)', () => {
 
     const joinNode: JoinNode = {
       type: NodeType.JOIN,
-      left: { type: NodeType.SCAN } as any,
-      right: { type: NodeType.SCAN } as any,
+      left: { type: NodeType.SCAN },
+      right: { type: NodeType.SCAN },
       joinType: JoinStrategy.Merge,
       condition: {
         type: 'COMPARISON',
@@ -86,8 +86,8 @@ describe('MergeJoinOperator (sorting behavior)', () => {
 
     const joinNode: JoinNode = {
       type: NodeType.JOIN,
-      left: { type: NodeType.SCAN } as any,
-      right: { type: NodeType.SCAN } as any,
+      left: { type: NodeType.SCAN },
+      right: { type: NodeType.SCAN },
       joinType: JoinStrategy.Merge,
       condition: {
         type: 'COMPARISON',
