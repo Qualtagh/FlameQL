@@ -1,6 +1,8 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { Predicate } from '../../api/expression';
 
+const comparatorCache = new Map<WhereFilterOp, (a: any, b: any) => boolean>();
+
 /**
  * Converts a WhereFilterOp into a binary comparison callback function.
  * This is used for in-memory filtering and nested loop joins.
@@ -9,6 +11,19 @@ import { Predicate } from '../../api/expression';
  * @returns A function that compares two values according to the operation
  */
 export function createOperationComparator(
+  operation: WhereFilterOp
+): (a: any, b: any) => boolean {
+  const cached = comparatorCache.get(operation);
+  if (cached) {
+    return cached;
+  }
+
+  const comparator = buildOperationComparator(operation);
+  comparatorCache.set(operation, comparator);
+  return comparator;
+}
+
+function buildOperationComparator(
   operation: WhereFilterOp
 ): (a: any, b: any) => boolean {
   switch (operation) {

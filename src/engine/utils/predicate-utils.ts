@@ -1,5 +1,6 @@
+import { WhereFilterOp } from '@google-cloud/firestore';
 import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
-import { invertComparisonOp } from './operation-comparator';
+import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
 const NOT_IN_LIST_MAX = 30;
@@ -324,7 +325,7 @@ function mergeAndConditions(conditions: Predicate[]): Predicate[] {
     eq?: Literal;
     neqValues: Literal[];
     notInValues: Literal[];
-    inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>;
+    inequalities: Array<{ op: WhereFilterOp; right: Literal }>;
     others: Predicate[];
     contradiction?: boolean;
   }
@@ -432,7 +433,7 @@ function buildBucketPredicates(bucket: {
   eq?: Literal;
   neqValues: Literal[];
   notInValues: Literal[];
-  inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>;
+  inequalities: Array<{ op: WhereFilterOp; right: Literal }>;
   others: Predicate[];
 }): { predicates: Predicate[]; contradiction?: boolean } {
   // If we have equality, validate it against other constraints and keep only the equality + others.
@@ -496,7 +497,7 @@ function buildBucketPredicates(bucket: {
 }
 
 function reduceInequalities(
-  inequalities: Array<{ op: ComparisonPredicate['operation']; right: Literal }>,
+  inequalities: Array<{ op: WhereFilterOp; right: Literal }>,
   field: Field
 ): { predicates: Predicate[]; contradiction?: boolean } {
   if (inequalities.length === 0) {
@@ -633,7 +634,7 @@ interface MembershipInfo {
   fieldKey: string;
   kind: MembershipKind;
   values: Expression[];
-  op: ComparisonPredicate['operation'];
+  op: WhereFilterOp;
 }
 
 function asMembership(predicate: Predicate): MembershipInfo | undefined {
@@ -722,51 +723,14 @@ function evaluateComparisonIfLiteral(predicate: ComparisonPredicate): Predicate 
   }
 
   const leftVal = leftLit.value!;
-
-  let result: boolean;
-  switch (predicate.operation) {
-    case '==':
-      result = leftVal == rightVal;
-      break;
-    case '!=':
-      result = leftVal != rightVal;
-      break;
-    case '<':
-      result = leftVal < rightVal;
-      break;
-    case '<=':
-      result = leftVal <= rightVal;
-      break;
-    case '>':
-      result = leftVal > rightVal;
-      break;
-    case '>=':
-      result = leftVal >= rightVal;
-      break;
-    case 'in':
-      if (!Array.isArray(rightVal)) return null;
-      result = rightVal.includes(leftVal);
-      break;
-    case 'not-in':
-      if (!Array.isArray(rightVal)) return null;
-      result = !rightVal.includes(leftVal);
-      break;
-    case 'array-contains':
-      if (!Array.isArray(leftVal)) return { type: 'CONSTANT', value: false };
-      result = leftVal.includes(rightVal);
-      break;
-    case 'array-contains-any':
-      if (!Array.isArray(leftVal) || !Array.isArray(rightVal)) return { type: 'CONSTANT', value: false };
-      {
-        const set = new Set(leftVal);
-        result = rightVal.some(v => set.has(v));
-      }
-      break;
-    default:
-      return null;
+  const op = predicate.operation;
+  const comparator = createOperationComparator(op);
+  try {
+    const result = comparator(leftVal, rightVal);
+    return { type: 'CONSTANT', value: result };
+  } catch {
+    return null;
   }
-
-  return { type: 'CONSTANT', value: result };
 }
 
 function partitionListByField(items: Expression[]): { fields: Expression[]; others: Expression[] } {
@@ -794,7 +758,7 @@ function pushUniqueExpression(list: Expression[], expr: Expression) {
   }
 }
 
-function getListLimit(op: ComparisonPredicate['operation']): number | undefined {
+function getListLimit(op: WhereFilterOp): number | undefined {
   switch (op) {
     case 'in':
       return IN_LIST_MAX;
@@ -831,29 +795,9 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return result;
 }
 
-function evaluateLiteralVsLiteral(
-  left: Literal,
-  op: ComparisonPredicate['operation'],
-  right: Literal
-): boolean {
-  const leftVal = left.value as any;
-  const rightVal = right.value as any;
-  switch (op) {
-    case '==':
-      return leftVal == rightVal;
-    case '!=':
-      return leftVal != rightVal;
-    case '<':
-      return leftVal < rightVal;
-    case '<=':
-      return leftVal <= rightVal;
-    case '>':
-      return leftVal > rightVal;
-    case '>=':
-      return leftVal >= rightVal;
-    default:
-      return true;
-  }
+function evaluateLiteralVsLiteral(left: Literal, op: WhereFilterOp, right: Literal): boolean {
+  const comparator = createOperationComparator(op);
+  return comparator(left.value, right.value);
 }
 
 /**
