@@ -9,6 +9,7 @@ if (admin.apps.length === 0) {
   admin.initializeApp({
     projectId: PROJECT_ID,
   });
+  jest.setTimeout(10000);
 }
 
 export const db = admin.firestore();

@@ -1,4 +1,4 @@
-import { collection, field, inList, literal, param, projection, runQuery } from '../../src/api/api';
+import { arrayContains, arrayContainsAny, collection, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -129,5 +129,37 @@ describe('runQuery API', () => {
     const userIds = results.map(r => r.userId).sort();
     expect(userIds).toEqual([1, 2]);
     expect(results.every(r => r.customerUserId === 2)).toBe(true);
+  });
+
+  it('supports list-aware operators with Firestore pushdown', async () => {
+    await db.collection('products').doc('p1').set({ color: 'red', tags: ['warm', 'primary'] });
+    await db.collection('products').doc('p2').set({ color: 'blue', tags: ['cool', 'primary'] });
+    await db.collection('products').doc('p3').set({ color: 'green', tags: ['cool', 'neutral'] });
+
+    const listPredicate = projection({
+      id: 'list-ops',
+      from: { p: collection('products') },
+      select: { color: field('p.color') },
+      where: {
+        type: 'AND',
+        conditions: [
+          notInList(field('p.color'), [literal('red'), literal('green')]),
+          arrayContainsAny(field('p.tags'), [literal('primary'), literal('neutral')]),
+        ],
+      },
+    });
+
+    const listResults = await runQuery(listPredicate, { db });
+    expect(listResults).toEqual([{ color: 'blue' }]);
+
+    const arrayContainsPredicate = projection({
+      id: 'array-contains',
+      from: { p: collection('products') },
+      select: { color: field('p.color') },
+      where: arrayContains(field('p.tags'), literal('warm')),
+    });
+
+    const warmResults = await runQuery(arrayContainsPredicate, { db });
+    expect(warmResults.map(r => r.color).sort()).toEqual(['red']);
   });
 });

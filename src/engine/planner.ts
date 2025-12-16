@@ -360,11 +360,13 @@ export class Planner {
 
     const constraints: Constraint[] = [];
     const nonIndexable = this.extractConstraints(predicate, constraints);
+    const removedMembership = this.enforceMembershipConstraintLimit(constraints);
+    const totalNonIndexable = nonIndexable + removedMembership;
     this.validateFirestoreGuardrails(constraints, orderBy);
-    const score = this.scoreConstraints(path, constraints, orderBy) + nonIndexable * 100;
+    const score = this.scoreConstraints(path, constraints, orderBy) + totalNonIndexable * 100;
 
     const base = this.createScanNode(alias, path, collectionGroup, constraints);
-    const node = nonIndexable > 0 ? this.wrapFilter(base, predicate) : base;
+    const node = totalNonIndexable > 0 ? this.wrapFilter(base, predicate) : base;
     return { node, score };
   }
 
@@ -426,6 +428,56 @@ export class Planner {
     }
 
     return 0;
+  }
+
+  /**
+   * Firestore allows at most one of IN / NOT_IN / ARRAY_CONTAINS_ANY per query.
+   * Prefer keeping IN (most selective), then ARRAY_CONTAINS_ANY, then NOT_IN.
+   * Removed constraints are still applied via post-fetch filtering.
+   *
+   * @returns number of constraints removed from pushdown.
+   */
+  private enforceMembershipConstraintLimit(constraints: Constraint[]): number {
+    const membershipOps: Constraint['op'][] = ['in', 'not-in', 'array-contains-any'];
+    const membership = constraints.filter(c => membershipOps.includes(c.op));
+    if (membership.length <= 1) return 0;
+
+    const priority = (op: Constraint['op']) => {
+      switch (op) {
+        case 'in':
+          return 2;
+        case 'array-contains-any':
+          return 1;
+        case 'not-in':
+          return 0;
+        default:
+          return -1;
+      }
+    };
+
+    let best = membership[0];
+    for (const c of membership) {
+      if (priority(c.op) > priority(best.op)) {
+        best = c;
+      }
+    }
+
+    const kept = new Set<Constraint>([best]);
+    const filtered: Constraint[] = [];
+    for (const c of constraints) {
+      if (membershipOps.includes(c.op)) {
+        if (kept.has(c)) {
+          filtered.push(c);
+        }
+      } else {
+        filtered.push(c);
+      }
+    }
+
+    const removed = constraints.length - filtered.length;
+    constraints.length = 0;
+    constraints.push(...filtered);
+    return removed;
   }
 
   private asField(expr: any): Field | null {
