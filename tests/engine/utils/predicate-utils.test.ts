@@ -174,6 +174,166 @@ describe('Predicate Utilities', () => {
       });
     });
 
+    it('handles != with bounds on AND/OR', () => {
+      const neqAndGte: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '>=', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqAndGte)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '>',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const neqAndGt: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqAndGt)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '>',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const neqOrGte: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '>=', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqOrGte)).toStrictEqual({ type: 'CONSTANT', value: true });
+
+      const neqOrGt: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqOrGt)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '!=',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const neqAndLte: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '<=', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqAndLte)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '<',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const neqAndLt: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqAndLt)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '<',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const neqOrLte: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '<=', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqOrLte)).toStrictEqual({ type: 'CONSTANT', value: true });
+
+      const neqOrLt: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(neqOrLt)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '!=',
+        left: field('u.score'),
+        right: literal(5),
+      });
+    });
+
+    it('handles not-in with eq/inList across AND/OR', () => {
+      const notInAndEq: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
+          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(1) },
+        ],
+      };
+      expect(simplifyPredicate(notInAndEq)).toStrictEqual({ type: 'CONSTANT', value: false });
+
+      const notInAndEqDisjoint: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
+          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) },
+        ],
+      };
+      expect(simplifyPredicate(notInAndEqDisjoint)).toStrictEqual({ type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) });
+
+      const notInAndIn: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
+          inList(field('u.id'), [literal(1), literal(3)]),
+        ],
+      };
+      expect(simplifyPredicate(notInAndIn)).toStrictEqual({ type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) });
+
+      const notInOrEq: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1)] },
+          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(1) },
+        ],
+      };
+      expect(simplifyPredicate(notInOrEq)).toStrictEqual({ type: 'CONSTANT', value: true });
+
+      const notInOrEqDisjoint: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1)] },
+          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(2) },
+        ],
+      };
+      expect(simplifyPredicate(notInOrEqDisjoint)).toStrictEqual({ type: 'COMPARISON', operation: '!=', left: field('u.id'), right: literal(1) });
+
+      const notInOrIn: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
+          inList(field('u.id'), [literal(1), literal(3)]),
+        ],
+      };
+      expect(simplifyPredicate(notInOrIn)).toStrictEqual({ type: 'COMPARISON', operation: '!=', left: field('u.id'), right: literal(2) });
+    });
+
     it('detects contradictory equality against inequalities', () => {
       const predicate: Predicate = {
         type: 'AND',
