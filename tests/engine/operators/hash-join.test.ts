@@ -1,5 +1,4 @@
-import { collection, field, projection } from '../../../src/api/api';
-import { JoinStrategy } from '../../../src/api/hints';
+import { arrayContains, arrayContainsAny, collection, eq, field, inList, JoinStrategy, projection } from '../../../src/api/api';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
@@ -32,12 +31,7 @@ describe('HashJoinOperator', () => {
 
     // Force Hash Join and set condition
     joinNode.joinType = JoinStrategy.Hash;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -73,12 +67,7 @@ describe('HashJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Hash;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('p.tags'),
-      right: field('s.tag'),
-      operation: 'array-contains',
-    };
+    joinNode.condition = arrayContains(field('p.tags'), field('s.tag'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -108,12 +97,7 @@ describe('HashJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Hash;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('i.tags'),
-      right: field('f.options'),
-      operation: 'array-contains-any',
-    };
+    joinNode.condition = arrayContainsAny(field('i.tags'), field('f.options'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -141,12 +125,7 @@ describe('HashJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Hash;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('t.tag'),
-      right: field('f.options'),
-      operation: 'in',
-    };
+    joinNode.condition = inList(field('t.tag'), field('f.options'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);

@@ -1,5 +1,4 @@
-import { collection, field, projection } from '../../src/api/api';
-import { JoinStrategy } from '../../src/api/hints';
+import { collection, eq, field, JoinStrategy, projection } from '../../src/api/api';
 import { JoinNode, NodeType, ProjectNode, ScanNode } from '../../src/engine/ast';
 import { Planner } from '../../src/engine/planner';
 
@@ -39,7 +38,7 @@ describe('Planner', () => {
       id: 'test',
       from: { j: collection('jobs'), s: collection('shifts') },
       select: { id: field('j.#id') },
-      where: { type: 'COMPARISON', left: field('j.#id'), right: field('s.jobId'), operation: '==' },
+      where: eq(field('j.#id'), field('s.jobId')),
       hints: { join: JoinStrategy.Hash },
     });
 

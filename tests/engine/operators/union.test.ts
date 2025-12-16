@@ -1,5 +1,4 @@
-import { field } from '../../../src/api/api';
-import { JoinStrategy } from '../../../src/api/hints';
+import { eq, field, JoinStrategy } from '../../../src/api/api';
 import { JoinNode, NodeType, ScanNode, UnionDistinctStrategy, UnionNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { clearDatabase, db } from '../../setup';
@@ -72,12 +71,7 @@ describe('Union Operator', () => {
         left: usersScan,
         right: ordersScan,
         joinType: JoinStrategy.Hash,
-        condition: {
-          type: 'COMPARISON',
-          left: field('u.#id'),
-          right: field('o.userId'),
-          operation: '==',
-        },
+        condition: eq(field('u.#id'), field('o.userId')),
       };
 
       // Duplicate the join subtree so every join row is produced twice.

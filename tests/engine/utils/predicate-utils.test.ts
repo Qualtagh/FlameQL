@@ -1,68 +1,40 @@
-import { arrayContains, arrayContainsAny, field, inList, literal, notInList, param } from '../../../src/api/api';
+import { and, arrayContains, arrayContainsAny, constant, eq, field, gt, gte, inList, literal, lt, lte, ne, not, notInList, or, param } from '../../../src/api/api';
 import { Predicate } from '../../../src/api/expression';
 import { simplifyPredicate, toDNF } from '../../../src/engine/utils/predicate-utils';
 
-const cmp = (left: any, right: any, operation: any = '==') => ({
-  type: 'COMPARISON',
-  left: field(`t.${left}`),
-  right: literal(right),
-  operation,
-} as const);
+const cmp = (left: any, right: any) => eq(field(`t.${left}`), literal(right));
 
 describe('Predicate Utilities', () => {
   describe('simplifyPredicate', () => {
     it('normalizes comparison to keep Field on the left', () => {
-      const predicate: Predicate = {
-        type: 'COMPARISON',
-        operation: '==',
-        left: literal(5),
-        right: field('u.id'),
-      };
-
+      const predicate: Predicate = eq(literal(5), field('u.id'));
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '==',
-        left: field('u.id'),
-        right: literal(5),
-      });
+      expect(result).toStrictEqual(eq(field('u.id'), literal(5)));
     });
 
     it('folds literal-to-literal comparisons (including lists) into CONSTANT', () => {
-      expect(simplifyPredicate({ type: 'COMPARISON', operation: '==', left: literal(1), right: literal(1) }))
-        .toStrictEqual({ type: 'CONSTANT', value: true });
-      expect(simplifyPredicate({ type: 'COMPARISON', operation: '!=', left: literal(1), right: literal(2) }))
-        .toStrictEqual({ type: 'CONSTANT', value: true });
-      expect(simplifyPredicate(inList(literal(2), [literal(1), literal(2)])))
-        .toStrictEqual({ type: 'CONSTANT', value: true });
-      expect(simplifyPredicate(inList(literal(3), [literal(1), literal(2)])))
-        .toStrictEqual({ type: 'CONSTANT', value: false });
+      expect(simplifyPredicate(eq(literal(1), literal(1)))).toStrictEqual(constant(true));
+      expect(simplifyPredicate(ne(literal(1), literal(2)))).toStrictEqual(constant(true));
+      expect(simplifyPredicate(inList(literal(2), [literal(1), literal(2)]))).toStrictEqual(constant(true));
+      expect(simplifyPredicate(inList(literal(3), [literal(1), literal(2)]))).toStrictEqual(constant(false));
     });
 
     it('splits inList with a Field inside the list into OR of EQ', () => {
       const predicate = inList(field('a.id'), [literal(1), param('p'), field('b.id')]);
-
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: 'in', left: field('a.id'), right: [literal(1), param('p')] },
-          { type: 'COMPARISON', operation: '==', left: field('a.id'), right: field('b.id') },
-        ],
-      });
+      expect(result).toStrictEqual(or([
+        inList(field('a.id'), [literal(1), param('p')]),
+        eq(field('a.id'), field('b.id')),
+      ]));
     });
 
     it('splits notInList with a Field inside the list into AND of NE', () => {
       const predicate = notInList(field('a.id'), [literal(1), field('b.id')]);
-
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('a.id'), right: literal(1) },
-          { type: 'COMPARISON', operation: '!=', left: field('a.id'), right: field('b.id') },
-        ],
-      });
+      expect(result).toStrictEqual(and([
+        ne(field('a.id'), literal(1)),
+        ne(field('a.id'), field('b.id')),
+      ]));
     });
 
     it('throws when arrayContainsAny has a Field inside the list', () => {
@@ -71,345 +43,181 @@ describe('Predicate Utilities', () => {
     });
 
     it('simplifies single-element lists to scalar comparisons', () => {
-      expect(simplifyPredicate(inList(field('a.id'), [literal(1)]))).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '==',
-        left: field('a.id'),
-        right: literal(1),
-      });
-
-      expect(simplifyPredicate(notInList(field('a.id'), [literal(2)]))).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '!=',
-        left: field('a.id'),
-        right: literal(2),
-      });
-
-      expect(simplifyPredicate(arrayContainsAny(field('a.tags'), [literal('warm')]))).toStrictEqual({
-        type: 'COMPARISON',
-        operation: 'array-contains',
-        left: field('a.tags'),
-        right: literal('warm'),
-      });
+      expect(simplifyPredicate(inList(field('a.id'), [literal(1)]))).toStrictEqual(eq(field('a.id'), literal(1)));
+      expect(simplifyPredicate(notInList(field('a.id'), [literal(2)]))).toStrictEqual(ne(field('a.id'), literal(2)));
+      expect(simplifyPredicate(arrayContainsAny(field('a.tags'), [literal('warm')]))).toStrictEqual(arrayContains(field('a.tags'), literal('warm')));
     });
 
     it('merges OR of EQs on the same field into inList', () => {
-      const predicate: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(1) },
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(2) },
-        ],
-      };
-
+      const predicate: Predicate = or([eq(field('u.id'), literal(1)), eq(field('u.id'), literal(2))]);
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        operation: 'in',
-        left: field('u.id'),
-        right: [literal(1), literal(2)],
-      });
+      expect(result).toStrictEqual(inList(field('u.id'), [literal(1), literal(2)]));
     });
 
     it('merges OR of array-contains into array-contains-any', () => {
-      const predicate: Predicate = {
-        type: 'OR',
-        conditions: [
-          arrayContains(field('a.tags'), literal('red')),
-          arrayContains(field('a.tags'), literal('blue')),
-        ],
-      };
-
+      const predicate: Predicate = or([arrayContains(field('a.tags'), literal('red')), arrayContains(field('a.tags'), literal('blue'))]);
       const result = simplifyPredicate(predicate);
       expect(result).toStrictEqual(arrayContainsAny(field('a.tags'), [literal('red'), literal('blue')]));
     });
 
     it('combines shared conjunction with membership into a single inList', () => {
-      const base: Predicate = { type: 'COMPARISON', operation: '==', left: field('x.flag'), right: literal(true) };
-      const predicate: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'AND', conditions: [base, inList(field('u.id'), [literal(1), literal(2)])] },
-          { type: 'AND', conditions: [base, { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) }] },
-        ],
-      };
-
+      const base: Predicate = eq(field('x.flag'), literal(true));
+      const predicate: Predicate = or([
+        and([base, inList(field('u.id'), [literal(1), literal(2)])]),
+        and([base, eq(field('u.id'), literal(3))]),
+      ]);
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'AND',
-        conditions: [
-          base,
-          { type: 'COMPARISON', operation: 'in', left: field('u.id'), right: [literal(1), literal(2), literal(3)] },
-        ],
-      });
+      expect(result).toStrictEqual(and([
+        base,
+        inList(field('u.id'), [literal(1), literal(2), literal(3)]),
+      ]));
     });
 
     it('merges OR of equality with inequalities into inclusive bounds', () => {
-      const ltOrEq: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '==', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(ltOrEq)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '<=',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const ltOrEq: Predicate = or([
+        lt(field('u.score'), literal(5)),
+        eq(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(ltOrEq)).toStrictEqual(lte(field('u.score'), literal(5)));
 
-      const gtOrEq: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '>', left: field('u.level'), right: literal(10) },
-          { type: 'COMPARISON', operation: '==', left: field('u.level'), right: literal(10) },
-        ],
-      };
-      expect(simplifyPredicate(gtOrEq)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '>=',
-        left: field('u.level'),
-        right: literal(10),
-      });
+      const gtOrEq: Predicate = or([
+        gt(field('u.level'), literal(10)),
+        eq(field('u.level'), literal(10)),
+      ]);
+      expect(simplifyPredicate(gtOrEq)).toStrictEqual(gte(field('u.level'), literal(10)));
     });
 
     it('handles != with bounds on AND/OR', () => {
-      const neqAndGte: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>=', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqAndGte)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '>',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqAndGte: Predicate = and([
+        ne(field('u.score'), literal(5)),
+        gte(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqAndGte)).toStrictEqual(gt(field('u.score'), literal(5)));
 
-      const neqAndGt: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqAndGt)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '>',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqAndGt: Predicate = and([
+        ne(field('u.score'), literal(5)),
+        gt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqAndGt)).toStrictEqual(gt(field('u.score'), literal(5)));
 
-      const neqOrGte: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>=', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqOrGte)).toStrictEqual({ type: 'CONSTANT', value: true });
+      const neqOrGte: Predicate = or([
+        ne(field('u.score'), literal(5)),
+        gte(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqOrGte)).toStrictEqual(constant(true));
 
-      const neqOrGt: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqOrGt)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '!=',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqOrGt: Predicate = or([
+        ne(field('u.score'), literal(5)),
+        gt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqOrGt)).toStrictEqual(ne(field('u.score'), literal(5)));
 
-      const neqAndLte: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '<=', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqAndLte)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '<',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqAndLte: Predicate = and([
+        ne(field('u.score'), literal(5)),
+        lte(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqAndLte)).toStrictEqual(lt(field('u.score'), literal(5)));
 
-      const neqAndLt: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqAndLt)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '<',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqAndLt: Predicate = and([
+        ne(field('u.score'), literal(5)),
+        lt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqAndLt)).toStrictEqual(lt(field('u.score'), literal(5)));
 
-      const neqOrLte: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '<=', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqOrLte)).toStrictEqual({ type: 'CONSTANT', value: true });
+      const neqOrLte: Predicate = or([
+        ne(field('u.score'), literal(5)),
+        lte(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqOrLte)).toStrictEqual(constant(true));
 
-      const neqOrLt: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '!=', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(neqOrLt)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '!=',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const neqOrLt: Predicate = or([
+        ne(field('u.score'), literal(5)),
+        lt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(neqOrLt)).toStrictEqual(ne(field('u.score'), literal(5)));
     });
 
     it('handles not-in with eq/inList across AND/OR', () => {
-      const notInAndEq: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(1) },
-        ],
-      };
-      expect(simplifyPredicate(notInAndEq)).toStrictEqual({ type: 'CONSTANT', value: false });
+      const notInAndEq: Predicate = and([
+        notInList(field('u.id'), [literal(1), literal(2)]),
+        eq(field('u.id'), literal(1)),
+      ]);
+      expect(simplifyPredicate(notInAndEq)).toStrictEqual(constant(false));
 
-      const notInAndEqDisjoint: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) },
-        ],
-      };
-      expect(simplifyPredicate(notInAndEqDisjoint)).toStrictEqual({ type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) });
+      const notInAndEqDisjoint: Predicate = and([
+        notInList(field('u.id'), [literal(1), literal(2)]),
+        eq(field('u.id'), literal(3)),
+      ]);
+      expect(simplifyPredicate(notInAndEqDisjoint)).toStrictEqual(eq(field('u.id'), literal(3)));
 
-      const notInAndIn: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
-          inList(field('u.id'), [literal(1), literal(3)]),
-        ],
-      };
-      expect(simplifyPredicate(notInAndIn)).toStrictEqual({ type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(3) });
+      const notInAndIn: Predicate = and([
+        notInList(field('u.id'), [literal(1), literal(2)]),
+        inList(field('u.id'), [literal(1), literal(3)]),
+      ]);
+      expect(simplifyPredicate(notInAndIn)).toStrictEqual(eq(field('u.id'), literal(3)));
 
-      const notInOrEq: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1)] },
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(1) },
-        ],
-      };
-      expect(simplifyPredicate(notInOrEq)).toStrictEqual({ type: 'CONSTANT', value: true });
+      const notInOrEq: Predicate = or([
+        notInList(field('u.id'), [literal(1)]),
+        eq(field('u.id'), literal(1)),
+      ]);
+      expect(simplifyPredicate(notInOrEq)).toStrictEqual(constant(true));
 
-      const notInOrEqDisjoint: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1)] },
-          { type: 'COMPARISON', operation: '==', left: field('u.id'), right: literal(2) },
-        ],
-      };
-      expect(simplifyPredicate(notInOrEqDisjoint)).toStrictEqual({ type: 'COMPARISON', operation: '!=', left: field('u.id'), right: literal(1) });
+      const notInOrEqDisjoint: Predicate = or([
+        notInList(field('u.id'), [literal(1)]),
+        eq(field('u.id'), literal(2)),
+      ]);
+      expect(simplifyPredicate(notInOrEqDisjoint)).toStrictEqual(ne(field('u.id'), literal(1)));
 
-      const notInOrIn: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: 'not-in', left: field('u.id'), right: [literal(1), literal(2)] },
-          inList(field('u.id'), [literal(1), literal(3)]),
-        ],
-      };
-      expect(simplifyPredicate(notInOrIn)).toStrictEqual({ type: 'COMPARISON', operation: '!=', left: field('u.id'), right: literal(2) });
+      const notInOrIn: Predicate = or([
+        notInList(field('u.id'), [literal(1), literal(2)]),
+        inList(field('u.id'), [literal(1), literal(3)]),
+      ]);
+      expect(simplifyPredicate(notInOrIn)).toStrictEqual(ne(field('u.id'), literal(2)));
     });
 
     it('detects contradictory equality against inequalities', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.age'), right: literal(5) },
-          { type: 'COMPARISON', operation: '==', left: field('u.age'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(predicate)).toStrictEqual({ type: 'CONSTANT', value: false });
+      const predicate: Predicate = and([
+        lt(field('u.age'), literal(5)),
+        eq(field('u.age'), literal(5)),
+      ]);
+      expect(simplifyPredicate(predicate)).toStrictEqual(constant(false));
 
-      const disjoint: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.age'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>', left: field('u.age'), right: literal(7) },
-        ],
-      };
-      expect(simplifyPredicate(disjoint)).toStrictEqual({ type: 'CONSTANT', value: false });
+      const disjoint: Predicate = and([
+        lt(field('u.age'), literal(5)),
+        gt(field('u.age'), literal(7)),
+      ]);
+      expect(simplifyPredicate(disjoint)).toStrictEqual(constant(false));
     });
 
     it('prunes inList by scalar bounds', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          inList(field('u.id'), [literal(1), literal(2), literal(5), literal(7)]),
-          { type: 'COMPARISON', operation: '>', left: field('u.id'), right: literal(4) },
-          { type: 'COMPARISON', operation: '<=', left: field('u.id'), right: literal(7) },
-        ],
-      };
+      const predicate: Predicate = and([
+        inList(field('u.id'), [literal(1), literal(2), literal(5), literal(7)]),
+        gt(field('u.id'), literal(4)),
+        lte(field('u.id'), literal(7)),
+      ]);
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'COMPARISON',
-        operation: 'in',
-        left: field('u.id'),
-        right: [literal(5), literal(7)],
-      });
+      expect(result).toStrictEqual(inList(field('u.id'), [literal(5), literal(7)]));
     });
 
     it('applies scalar inequality rules (< A || > A => != A) and detects contradictions for AND', () => {
-      const orPredicate: Predicate = {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(orPredicate)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '!=',
-        left: field('u.score'),
-        right: literal(5),
-      });
+      const orPredicate: Predicate = or([
+        lt(field('u.score'), literal(5)),
+        gt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(orPredicate)).toStrictEqual(ne(field('u.score'), literal(5)));
 
-      const andPredicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '>', left: field('u.score'), right: literal(5) },
-        ],
-      };
-      expect(simplifyPredicate(andPredicate)).toStrictEqual({ type: 'CONSTANT', value: false });
+      const andPredicate: Predicate = and([
+        lt(field('u.score'), literal(5)),
+        gt(field('u.score'), literal(5)),
+      ]);
+      expect(simplifyPredicate(andPredicate)).toStrictEqual(constant(false));
 
-      const mixed: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
-          { type: 'COMPARISON', operation: '==', left: field('u.score'), right: literal(2) },
-        ],
-      };
-      expect(simplifyPredicate(mixed)).toStrictEqual({
-        type: 'COMPARISON',
-        operation: '==',
-        left: field('u.score'),
-        right: literal(2),
-      });
+      const mixed: Predicate = and([
+        lt(field('u.score'), literal(5)),
+        eq(field('u.score'), literal(2)),
+      ]);
+      expect(simplifyPredicate(mixed)).toStrictEqual(eq(field('u.score'), literal(2)));
     });
 
     it('splits oversized inList and notInList to respect Firestore limits', () => {
@@ -445,99 +253,64 @@ describe('Predicate Utilities', () => {
     });
 
     it('should unwrap single element AND', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [cmp('a', 'b')],
-      };
+      const predicate: Predicate = and([cmp('a', 'b')]);
 
       const result = simplifyPredicate(predicate);
       expect(result).toStrictEqual(cmp('a', 'b'));
     });
 
     it('should flatten nested AND', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          {
-            type: 'AND',
-            conditions: [
-              cmp('a', 'b'),
-              cmp('c', 'd'),
-            ],
-          },
-          cmp('e', 'f'),
-        ],
-      };
-
-      const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'AND',
-        conditions: [
+      const predicate: Predicate = and([
+        and([
           cmp('a', 'b'),
           cmp('c', 'd'),
-          cmp('e', 'f'),
-        ],
-      });
+        ]),
+        cmp('e', 'f'),
+      ]);
+
+      const result = simplifyPredicate(predicate);
+      expect(result).toStrictEqual(and([
+        cmp('a', 'b'),
+        cmp('c', 'd'),
+        cmp('e', 'f'),
+      ]));
     });
 
     it('should remove TRUE from AND', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          cmp('a', 'b'),
-          { type: 'CONSTANT', value: true },
-        ],
-      };
+      const predicate: Predicate = and([
+        cmp('a', 'b'),
+        constant(true),
+      ]);
 
       const result = simplifyPredicate(predicate);
       expect(result).toStrictEqual(cmp('a', 'b'));
     });
 
     it('should reduce AND with FALSE to FALSE', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          cmp('a', 'b'),
-          { type: 'CONSTANT', value: false },
-        ],
-      };
+      const predicate: Predicate = and([
+        cmp('a', 'b'),
+        constant(false),
+      ]);
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({ type: 'CONSTANT', value: false });
+      expect(result).toStrictEqual(constant(false));
     });
 
     it('should apply De Morgan: !(A AND B) => !A OR !B', () => {
-      const predicate: Predicate = {
-        type: 'NOT',
-        operand: {
-          type: 'AND',
-          conditions: [
-            cmp('a', 'b'),
-            cmp('c', 'd'),
-          ],
-        },
-      };
+      const predicate: Predicate = not(and([
+        cmp('a', 'b'),
+        cmp('c', 'd'),
+      ]));
 
       const result = simplifyPredicate(predicate);
-      expect(result).toStrictEqual({
-        type: 'OR',
-        conditions: [
-          { type: 'NOT', operand: cmp('a', 'b') },
-          { type: 'NOT', operand: cmp('c', 'd') },
-        ],
-      });
+      expect(result).toStrictEqual(or([
+        not(cmp('a', 'b')),
+        not(cmp('c', 'd')),
+      ]));
     });
 
     it('should apply double negation: !!A => A', () => {
-      const predicate: Predicate = {
-        type: 'NOT',
-        operand: {
-          type: 'NOT',
-          operand: {
-            ...cmp('a', 'b'),
-          },
-        },
-      };
+      const predicate: Predicate = not(not(cmp('a', 'b')));
 
       const result = simplifyPredicate(predicate);
       expect(result).toStrictEqual(cmp('a', 'b'));
@@ -546,38 +319,19 @@ describe('Predicate Utilities', () => {
 
   describe('toDNF', () => {
     it('should distribute (A AND (B OR C)) to (A AND B) OR (A AND C)', () => {
-      const predicate: Predicate = {
-        type: 'AND',
-        conditions: [
-          cmp('a', 'b'),
-          {
-            type: 'OR',
-            conditions: [
-              cmp('c', 'd'),
-              cmp('e', 'f'),
-            ],
-          },
-        ],
-      };
+      const predicate: Predicate = and([
+        cmp('a', 'b'),
+        or([
+          cmp('c', 'd'),
+          cmp('e', 'f'),
+        ]),
+      ]);
 
       const result = toDNF(predicate);
-      expect(result).toStrictEqual({
-        type: 'OR',
-        conditions: [
-          {
-            type: 'AND', conditions: [
-              cmp('a', 'b'),
-              cmp('c', 'd'),
-            ],
-          },
-          {
-            type: 'AND', conditions: [
-              cmp('a', 'b'),
-              cmp('e', 'f'),
-            ],
-          },
-        ],
-      });
+      expect(result).toStrictEqual(or([
+        and([cmp('a', 'b'), cmp('c', 'd')]),
+        and([cmp('a', 'b'), cmp('e', 'f')]),
+      ]));
     });
 
     it('multi-level AND/OR/NOTs should be simplified to OR of ANDs (max 3 levels)', () => {
@@ -587,45 +341,27 @@ describe('Predicate Utilities', () => {
       const D = cmp('D', 'val') as Predicate;
 
       // deeply nested mix of AND/OR/NOT
-      const predicate: Predicate = {
-        type: 'OR',
-        conditions: [
-          {
-            type: 'AND',
-            conditions: [
-              A,
-              {
-                type: 'OR',
-                conditions: [
-                  {
-                    type: 'AND',
-                    conditions: [B, { type: 'NOT', operand: C }],
-                  },
-                  {
-                    type: 'OR',
-                    conditions: [
-                      { type: 'NOT', operand: { type: 'NOT', operand: D } as Predicate },
-                      C,
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          { type: 'NOT', operand: { type: 'OR', conditions: [A, B] } as Predicate },
-        ],
-      };
+      const predicate: Predicate = or([
+        and([
+          A,
+          or([
+            and([B, not(C)]),
+            or([
+              not(not(D)),
+              C,
+            ]),
+          ]),
+        ]),
+        not(or([A, B])),
+      ]);
 
       const result = toDNF(predicate);
-      expect(result).toStrictEqual({
-        type: 'OR',
-        conditions: [
-          { type: 'AND', conditions: [A, B, { type: 'NOT', operand: C }] },
-          { type: 'AND', conditions: [A, D] },
-          { type: 'AND', conditions: [A, C] },
-          { type: 'AND', conditions: [{ type: 'NOT', operand: A }, { type: 'NOT', operand: B }] },
-        ],
-      });
+      expect(result).toStrictEqual(or([
+        and([A, B, not(C)]),
+        and([A, D]),
+        and([A, C]),
+        and([not(A), not(B)]),
+      ]));
     });
 
     it('should simplify (A || B) && (A || !B || C) && !C to A', () => {
@@ -633,25 +369,15 @@ describe('Predicate Utilities', () => {
       const B = cmp('B', 'val') as Predicate;
       const C = cmp('C', 'val') as Predicate;
 
-      const expr: Predicate = {
-        type: 'AND',
-        conditions: [
-          { type: 'OR', conditions: [A, B] },
-          {
-            type: 'OR',
-            conditions: [
-              A,
-              { type: 'NOT', operand: B },
-              C,
-            ],
-          },
-          { type: 'NOT', operand: C },
-        ],
-      };
+      const expr: Predicate = and([
+        or([A, B]),
+        or([A, not(B), C]),
+        not(C),
+      ]);
 
       const result = simplifyPredicate(toDNF(expr));
 
-      expect(result).toStrictEqual({ type: 'AND', conditions: [{ type: 'NOT', operand: C }, A] });
+      expect(result).toStrictEqual(and([not(C), A]));
     });
   });
 });

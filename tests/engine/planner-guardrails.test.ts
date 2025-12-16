@@ -1,5 +1,4 @@
-import { collection, field, literal, projection } from '../../src/api/api';
-import { JoinStrategy } from '../../src/api/hints';
+import { and, arrayContains, collection, field, gt, JoinStrategy, literal, lt, projection } from '../../src/api/api';
 import { Executor } from '../../src/engine/executor';
 import { Planner } from '../../src/engine/planner';
 import { clearDatabase, db } from '../setup';
@@ -13,13 +12,10 @@ describe('Planner guardrails', () => {
     const p = projection({
       id: 'ineq-multi',
       from: { j: collection('jobs') },
-      where: {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', left: field('j.age'), right: literal(10), operation: '>' },
-          { type: 'COMPARISON', left: field('j.score'), right: literal(5), operation: '<' },
-        ],
-      },
+      where: and([
+        gt(field('j.age'), literal(10)),
+        lt(field('j.score'), literal(5)),
+      ]),
       select: { id: field('j.#id') },
     });
 
@@ -31,7 +27,7 @@ describe('Planner guardrails', () => {
     const p = projection({
       id: 'ineq-order',
       from: { j: collection('jobs') },
-      where: { type: 'COMPARISON', left: field('j.age'), right: literal(10), operation: '>' },
+      where: gt(field('j.age'), literal(10)),
       orderBy: ['j.title'],
       select: { id: field('j.#id') },
     });
@@ -44,7 +40,7 @@ describe('Planner guardrails', () => {
     const p = projection({
       id: 'bad-merge-hint',
       from: { p: collection('posts'), s: collection('searches') },
-      where: { type: 'COMPARISON', left: field('p.tags'), right: field('s.tag'), operation: 'array-contains' },
+      where: arrayContains(field('p.tags'), field('s.tag')),
       select: { tag: field('s.tag') },
       hints: { join: JoinStrategy.Merge },
     });
@@ -57,7 +53,7 @@ describe('Planner guardrails', () => {
     const p = projection({
       id: 'indexed-nl-hint-ineq',
       from: { u: collection('users'), o: collection('orders') },
-      where: { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '>' },
+      where: gt(field('u.id'), field('o.userId')),
       select: { id: field('u.#id') },
       hints: { join: JoinStrategy.IndexedNestedLoop },
     });

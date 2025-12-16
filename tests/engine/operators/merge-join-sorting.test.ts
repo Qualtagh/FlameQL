@@ -1,5 +1,4 @@
-import { field } from '../../../src/api/api';
-import { JoinStrategy } from '../../../src/api/hints';
+import { eq, field, JoinStrategy } from '../../../src/api/api';
 import { JoinNode, NodeType } from '../../../src/engine/ast';
 import { MergeJoinOperator } from '../../../src/engine/operators/merge-join';
 import type { Operator, SortOrder } from '../../../src/engine/operators/operator';
@@ -37,12 +36,7 @@ describe('MergeJoinOperator (sorting behavior)', () => {
       left: { type: NodeType.SCAN },
       right: { type: NodeType.SCAN },
       joinType: JoinStrategy.Merge,
-      condition: {
-        type: 'COMPARISON',
-        left: field('a.k'),
-        right: field('b.k'),
-        operation: '==',
-      },
+      condition: eq(field('a.k'), field('b.k')),
     };
 
     const originalSort = Array.prototype.sort;
@@ -89,12 +83,7 @@ describe('MergeJoinOperator (sorting behavior)', () => {
       left: { type: NodeType.SCAN },
       right: { type: NodeType.SCAN },
       joinType: JoinStrategy.Merge,
-      condition: {
-        type: 'COMPARISON',
-        left: field('a.k'),
-        right: field('b.k'),
-        operation: '==',
-      },
+      condition: eq(field('a.k'), field('b.k')),
     };
 
     const originalSort = Array.prototype.sort;

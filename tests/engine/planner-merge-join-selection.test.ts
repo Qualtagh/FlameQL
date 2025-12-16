@@ -1,5 +1,4 @@
-import { collection, field, projection } from '../../src/api/api';
-import { JoinStrategy } from '../../src/api/hints';
+import { and, collection, field, gt, JoinStrategy, projection } from '../../src/api/api';
 import { JoinNode, NodeType, ProjectNode, ScanNode } from '../../src/engine/ast';
 import { IndexManager } from '../../src/engine/indexes/index-manager';
 import { Planner } from '../../src/engine/planner';
@@ -9,7 +8,7 @@ describe('Planner (merge join selection)', () => {
     const p = projection({
       id: 'mj-no-index',
       from: { u: collection('users'), o: collection('orders') },
-      where: { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '>' },
+      where: gt(field('u.id'), field('o.userId')),
       select: { id: field('u.#id') },
     });
 
@@ -35,7 +34,7 @@ describe('Planner (merge join selection)', () => {
     const p = projection({
       id: 'mj-with-index',
       from: { u: collection('users'), o: collection('orders') },
-      where: { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '>' },
+      where: gt(field('u.id'), field('o.userId')),
       select: { id: field('u.#id') },
     });
 
@@ -74,13 +73,10 @@ describe('Planner (merge join selection)', () => {
     const p = projection({
       id: 'mj-two-joins',
       from: { u: collection('users'), o: collection('orders'), p: collection('payments') },
-      where: {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '>' },
-          { type: 'COMPARISON', left: field('u.id'), right: field('p.userId'), operation: '>' },
-        ],
-      },
+      where: and([
+        gt(field('u.id'), field('o.userId')),
+        gt(field('u.id'), field('p.userId')),
+      ]),
       select: { id: field('u.#id') },
     });
 

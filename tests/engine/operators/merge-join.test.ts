@@ -1,4 +1,4 @@
-import { collection, field, projection } from '../../../src/api/api';
+import { arrayContains, collection, eq, field, gt, gte, lt, lte, projection } from '../../../src/api/api';
 import { JoinStrategy } from '../../../src/api/hints';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
@@ -32,12 +32,7 @@ describe('MergeJoinOperator', () => {
 
     // Force Merge Join and set condition
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -69,12 +64,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -98,12 +88,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -130,12 +115,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -162,12 +142,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -195,12 +170,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('p.code'),
-      right: field('i.productCode'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('p.code'), field('i.productCode'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -221,12 +191,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: 'array-contains',
-    };
+    joinNode.condition = arrayContains(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
 
@@ -256,12 +221,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '<',
-    };
+    joinNode.condition = lt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -298,12 +258,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '<=',
-    };
+    joinNode.condition = lte(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -338,12 +293,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '>',
-    };
+    joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -380,12 +330,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '>=',
-    };
+    joinNode.condition = gte(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -419,12 +364,7 @@ describe('MergeJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.Merge;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '>',
-    };
+    joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);

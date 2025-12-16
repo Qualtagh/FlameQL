@@ -1,5 +1,4 @@
-import { collection, field, projection } from '../../../src/api/api';
-import { JoinStrategy } from '../../../src/api/hints';
+import { and, arrayContains, collection, eq, field, gt, JoinStrategy, projection } from '../../../src/api/api';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
@@ -31,12 +30,7 @@ describe('NestedLoopJoinOperator', () => {
 
     // Force NestedLoop Join
     joinNode.joinType = JoinStrategy.NestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.#id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.#id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -66,12 +60,7 @@ describe('NestedLoopJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.NestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('s.val'),
-      right: field('t.limit'),
-      operation: '>',
-    };
+    joinNode.condition = gt(field('s.val'), field('t.limit'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -103,12 +92,7 @@ describe('NestedLoopJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.NestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('p.tags'),
-      right: field('s.tag'),
-      operation: 'array-contains',
-    };
+    joinNode.condition = arrayContains(field('p.tags'), field('s.tag'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -200,12 +184,7 @@ describe('NestedLoopJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.NestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('p.price.currency'),
-      right: field('r.code'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('p.price.currency'), field('r.code'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -247,23 +226,10 @@ describe('NestedLoopJoinOperator', () => {
     await db.collection('users').doc('4').set({ id: 4, role: 'login', active: true });
     await db.collection('logs').doc('l4').set({ userId: 4, action: 'login' });
 
-    joinNode.condition = {
-      type: 'AND',
-      conditions: [
-        {
-          type: 'COMPARISON',
-          left: field('u.#id'),
-          right: field('l.userId'),
-          operation: '==',
-        },
-        {
-          type: 'COMPARISON',
-          left: field('u.role'),
-          right: field('l.action'),
-          operation: '==',
-        },
-      ],
-    };
+    joinNode.condition = and([
+      eq(field('u.#id'), field('l.userId')),
+      eq(field('u.role'), field('l.action')),
+    ]);
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);

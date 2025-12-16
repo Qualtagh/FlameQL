@@ -1,20 +1,6 @@
-import { literal } from '../api/api';
+import { and, constant, JoinStrategy, literal, not, or, PredicateMode, PredicateOrMode } from '../api/api';
 import { Collection, Expression, Field, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
-import { JoinStrategy, PredicateMode, PredicateOrMode } from '../api/hints';
-import {
-  Constraint,
-  ExecutionNode,
-  FilterNode,
-  JoinNode,
-  LimitNode,
-  NodeType,
-  ProjectNode,
-  ScanNode,
-  SortNode,
-  traverseExecutionNode,
-  UnionDistinctStrategy,
-  UnionNode,
-} from './ast';
+import { Constraint, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
@@ -145,7 +131,7 @@ export class Planner {
       const remaining = list
         .filter(c => !commonKeys.has(this.predicateKey(c)))
         .map(simplifyPredicate);
-      return this.andOf(remaining) ?? ({ type: 'CONSTANT', value: true } as Predicate);
+      return this.andOf(remaining) ?? constant(true);
     }).map(simplifyPredicate);
 
     return { common, remainders };
@@ -267,14 +253,14 @@ export class Planner {
     const filtered = conditions.filter(p => !(p.type === 'CONSTANT' && p.value === true));
     if (filtered.length === 0) return undefined;
     if (filtered.length === 1) return filtered[0];
-    return { type: 'AND', conditions: filtered } as Predicate;
+    return and(filtered);
   }
 
   private orOf(conditions: Predicate[]): Predicate {
     const filtered = conditions.map(simplifyPredicate);
-    if (filtered.length === 0) return { type: 'CONSTANT', value: false } as Predicate;
+    if (filtered.length === 0) return constant(false);
     if (filtered.length === 1) return filtered[0];
-    return { type: 'OR', conditions: filtered } as Predicate;
+    return or(filtered);
   }
 
   private predicateKey(p: Predicate): string {
@@ -554,11 +540,11 @@ export class Planner {
 
       let joinCondition: Predicate;
       if (relevant.length === 0) {
-        joinCondition = { type: 'CONSTANT', value: true };
+        joinCondition = constant(true);
       } else if (relevant.length === 1) {
         joinCondition = relevant[0];
       } else {
-        joinCondition = { type: 'AND', conditions: relevant };
+        joinCondition = and(relevant);
       }
 
       // If we have a simple binary predicate, normalize orientation so the LEFT operand
@@ -820,9 +806,7 @@ export class Planner {
       return root;
     }
 
-    const predicate: Predicate = residualPredicates.length === 1
-      ? residualPredicates[0]
-      : { type: 'AND', conditions: residualPredicates };
+    const predicate: Predicate = residualPredicates.length === 1 ? residualPredicates[0] : and(residualPredicates);
 
     return {
       type: NodeType.FILTER,
@@ -976,7 +960,7 @@ export class Planner {
           conditions: predicate.conditions.map(p => this.normalizePredicate(p, aliases)),
         };
       case 'NOT':
-        return { type: 'NOT', operand: this.normalizePredicate(predicate.operand, aliases) };
+        return not(this.normalizePredicate(predicate.operand, aliases));
       case 'CONSTANT':
         return predicate;
       default:

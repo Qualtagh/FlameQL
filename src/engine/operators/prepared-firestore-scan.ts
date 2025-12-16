@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import { and, constant } from '../../api/api';
 import { Predicate } from '../../api/expression';
 import { Constraint, ExecutionNode, FilterNode, NodeType, ScanNode } from '../ast';
 import { evaluatePredicate } from '../evaluator';
@@ -129,14 +130,14 @@ function compileConstraints(constraints: Constraint[]): FirestoreWhereConstraint
 }
 
 function predicateFromConstraints(constraints: Constraint[]): Predicate {
-  if (!constraints.length) return { type: 'CONSTANT', value: true };
+  if (!constraints.length) return constant(true);
   const conditions: Predicate[] = constraints.map(c => ({
     type: 'COMPARISON',
     left: c.field,
     operation: c.op,
     right: c.value,
   }));
-  return conditions.length === 1 ? conditions[0] : { type: 'AND', conditions };
+  return conditions.length === 1 ? conditions[0] : and(conditions);
 }
 
 function isMembershipConstraint(constraint: FirestoreWhereConstraint): boolean {

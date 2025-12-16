@@ -1,4 +1,4 @@
-import { arrayContains, arrayContainsAny, collection, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
+import { and, arrayContains, arrayContainsAny, collection, eq, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -101,7 +101,7 @@ describe('runQuery API', () => {
       id: 'param-query',
       from: { u: collection('users') },
       select: { userName: field('u.name') },
-      where: { type: 'COMPARISON', left: field('u.id'), right: param('userId'), operation: '==' },
+      where: eq(field('u.id'), param('userId')),
     });
 
     const results = await runQuery(p, { db, parameters: { userId: 'u1' } });
@@ -161,13 +161,10 @@ describe('runQuery API', () => {
       id: 'list-ops',
       from: { p: collection('products') },
       select: { color: field('p.color') },
-      where: {
-        type: 'AND',
-        conditions: [
-          notInList(field('p.color'), [literal('red'), literal('green')]),
-          arrayContainsAny(field('p.tags'), [literal('primary'), literal('neutral')]),
-        ],
-      },
+      where: and([
+        notInList(field('p.color'), [literal('red'), literal('green')]),
+        arrayContainsAny(field('p.tags'), [literal('primary'), literal('neutral')]),
+      ]),
     });
 
     const listResults = await runQuery(listPredicate, { db });

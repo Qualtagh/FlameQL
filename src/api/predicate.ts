@@ -1,7 +1,7 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { type } from 'arktype';
 import { whereFilterOpType } from './external-types';
-import { fieldType } from './field';
+import { Field, fieldType } from './field';
 import { literalType } from './literal';
 import { paramType } from './param';
 
@@ -71,15 +71,15 @@ export function arrayContains(left: Expression, right: Expression): ComparisonPr
   return comparison('array-contains', left, right);
 }
 
-export function inList(left: Expression, right: Expression[]): ComparisonPredicate {
+export function inList(left: Expression, right: Expression[] | Field): ComparisonPredicate {
   return comparison('in', left, right);
 }
 
-export function notInList(left: Expression, right: Expression[]): ComparisonPredicate {
+export function notInList(left: Expression, right: Expression[] | Field): ComparisonPredicate {
   return comparison('not-in', left, right);
 }
 
-export function arrayContainsAny(left: Expression, right: Expression[]): ComparisonPredicate {
+export function arrayContainsAny(left: Expression, right: Expression[] | Field): ComparisonPredicate {
   return comparison('array-contains-any', left, right);
 }
 
@@ -99,10 +99,6 @@ export function constant(value: boolean): ConstantPredicate {
   return { type: 'CONSTANT', value };
 }
 
-function comparison(
-  operation: WhereFilterOp,
-  left: Expression,
-  right: Expression | Expression[]
-): ComparisonPredicate {
+function comparison(operation: WhereFilterOp, left: Expression, right: Expression | Expression[]): ComparisonPredicate {
   return { type: 'COMPARISON', operation, left, right };
 }

@@ -1,5 +1,4 @@
-import { collection, field, literal, projection } from '../../src/api/api';
-import { JoinStrategy, PredicateMode, PredicateOrMode } from '../../src/api/hints';
+import { and, collection, eq, field, gt, JoinStrategy, literal, or, PredicateMode, PredicateOrMode, projection } from '../../src/api/api';
 import { FilterNode, JoinNode, NodeType, ProjectNode, ScanNode, UnionDistinctStrategy, UnionNode } from '../../src/engine/ast';
 import { Planner } from '../../src/engine/planner';
 
@@ -8,13 +7,10 @@ describe('Planner disjunction handling', () => {
     const p = projection({
       id: 'single-source-or',
       from: { u: collection('users') },
-      where: {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-          { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
-        ],
-      },
+      where: or([
+        eq(field('u.age'), literal(25)),
+        gt(field('u.age'), literal(30)),
+      ]),
       select: { id: field('u.#id') },
       hints: { predicateOrMode: PredicateOrMode.Union },
     });
@@ -40,13 +36,10 @@ describe('Planner disjunction handling', () => {
     const p = projection({
       id: 'single-source-or-single-scan',
       from: { u: collection('users') },
-      where: {
-        type: 'OR',
-        conditions: [
-          { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-          { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
-        ],
-      },
+      where: or([
+        eq(field('u.age'), literal(25)),
+        gt(field('u.age'), literal(30)),
+      ]),
       select: { id: field('u.#id') },
       hints: { predicateOrMode: PredicateOrMode.SingleScan },
     });
@@ -63,27 +56,18 @@ describe('Planner disjunction handling', () => {
     const p = projection({
       id: 'multi-source-or',
       from: { u: collection('users'), o: collection('orders') },
-      where: {
-        type: 'OR',
-        conditions: [
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-              { type: 'COMPARISON', left: field('o.total'), operation: '==', right: literal(100) },
-            ],
-          },
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(30) },
-              { type: 'COMPARISON', left: field('o.total'), operation: '==', right: literal(200) },
-            ],
-          },
-        ],
-      },
+      where: or([
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          eq(field('u.age'), literal(25)),
+          eq(field('o.total'), literal(100)),
+        ]),
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          eq(field('u.age'), literal(30)),
+          eq(field('o.total'), literal(200)),
+        ]),
+      ]),
       select: { uId: field('u.#id'), oTotal: field('o.total') },
       hints: { join: JoinStrategy.Auto, predicateOrMode: PredicateOrMode.Union },
     });
@@ -123,25 +107,16 @@ describe('Planner disjunction handling', () => {
     const p = projection({
       id: 'common-factor-single-scan',
       from: { u: collection('users'), o: collection('orders') },
-      where: {
-        type: 'OR',
-        conditions: [
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-            ],
-          },
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
-            ],
-          },
-        ],
-      },
+      where: or([
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          eq(field('u.age'), literal(25)),
+        ]),
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          gt(field('u.age'), literal(30)),
+        ]),
+      ]),
       select: { uId: field('u.#id') },
       hints: { predicateOrMode: PredicateOrMode.SingleScan },
     });
@@ -159,25 +134,16 @@ describe('Planner disjunction handling', () => {
     const p = projection({
       id: 'respect-mode',
       from: { u: collection('users'), o: collection('orders') },
-      where: {
-        type: 'OR',
-        conditions: [
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '==', right: literal(25) },
-            ],
-          },
-          {
-            type: 'AND',
-            conditions: [
-              { type: 'COMPARISON', left: field('u.#id'), operation: '==', right: field('o.userId') },
-              { type: 'COMPARISON', left: field('u.age'), operation: '>', right: literal(30) },
-            ],
-          },
-        ],
-      },
+      where: or([
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          eq(field('u.age'), literal(25)),
+        ]),
+        and([
+          eq(field('u.#id'), field('o.userId')),
+          gt(field('u.age'), literal(30)),
+        ]),
+      ]),
       select: { uId: field('u.#id') },
       hints: { predicateMode: PredicateMode.Respect },
     });

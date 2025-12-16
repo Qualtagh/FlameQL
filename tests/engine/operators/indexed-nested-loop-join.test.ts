@@ -1,5 +1,4 @@
-import { collection, field, literal, projection } from '../../../src/api/api';
-import { JoinStrategy, PredicateMode } from '../../../src/api/hints';
+import { and, collection, eq, field, gt, JoinStrategy, literal, or, PredicateMode, projection } from '../../../src/api/api';
 import { JoinNode, NodeType, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { IndexManager } from '../../../src/engine/indexes/index-manager';
@@ -30,12 +29,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
 
     // Force indexed nested loop join on equality predicate.
     joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -57,19 +51,13 @@ describe('IndexedNestedLoopJoinOperator', () => {
     const p = projection({
       id: 'inlj-right-filter',
       from: { u: collection('users'), o: collection('orders') },
-      where: {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', left: field('u.active'), right: literal(true), operation: '==' },
-          {
-            type: 'OR',
-            conditions: [
-              { type: 'COMPARISON', left: field('o.status'), right: literal('paid'), operation: '==' },
-              { type: 'COMPARISON', left: field('o.status'), right: literal('refunded'), operation: '==' },
-            ],
-          },
-        ],
-      },
+      where: and([
+        eq(field('u.active'), literal(true)),
+        or([
+          eq(field('o.status'), literal('paid')),
+          eq(field('o.status'), literal('refunded')),
+        ]),
+      ]),
       select: { uId: field('u.id'), oStatus: field('o.status') },
       hints: { predicateMode: PredicateMode.Respect },
     });
@@ -80,12 +68,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     // The plan is PROJECT over either JOIN or FILTER->JOIN depending on planner; find the join.
     const joinNode = (plan.source.type === NodeType.JOIN ? plan.source : (plan.source as any).source) as JoinNode;
     joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
@@ -115,13 +98,10 @@ describe('IndexedNestedLoopJoinOperator', () => {
     const p = projection({
       id: 'inlj-auto',
       from: { u: collection('users'), o: collection('orders') },
-      where: {
-        type: 'AND',
-        conditions: [
-          { type: 'COMPARISON', left: field('u.id'), right: field('o.userId'), operation: '==' },
-          { type: 'COMPARISON', left: field('u.region'), right: field('o.region'), operation: '==' },
-        ],
-      },
+      where: and([
+        eq(field('u.id'), field('o.userId')),
+        eq(field('u.region'), field('o.region')),
+      ]),
       select: { uId: field('u.id'), oTotal: field('o.total') },
       hints: { join: JoinStrategy.Auto },
     });
@@ -160,12 +140,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     const joinNode = plan.source as JoinNode;
 
     joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('u.id'),
-      right: field('o.userId'),
-      operation: '>',
-    };
+    joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);

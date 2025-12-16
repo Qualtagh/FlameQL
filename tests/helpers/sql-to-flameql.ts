@@ -1,6 +1,6 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import parse from 'sqlite-parser';
-import { collection, field, literal, projection } from '../../src/api/api';
+import { and, collection, constant, eq, field, literal, not, or, projection } from '../../src/api/api';
 import { type Expression, type Predicate, Projection } from '../../src/api/expression';
 
 export interface SelectMapping {
@@ -187,22 +187,16 @@ function toOrder(node: any, ctx: Context) {
 function toPredicate(node: any, ctx: Context): Predicate {
   if (node.type === 'expression' && node.variant === 'operation') {
     if (node.format === 'unary' && node.operator?.toLowerCase() === 'not') {
-      return { type: 'NOT', operand: toPredicate(node.expression, ctx) };
+      return not(toPredicate(node.expression, ctx));
     }
 
     if (node.format === 'binary') {
       const op = String(node.operation).toLowerCase();
       switch (op) {
         case 'and':
-          return {
-            type: 'AND',
-            conditions: [toPredicate(node.left, ctx), toPredicate(node.right, ctx)],
-          };
+          return and([toPredicate(node.left, ctx), toPredicate(node.right, ctx)]);
         case 'or':
-          return {
-            type: 'OR',
-            conditions: [toPredicate(node.left, ctx), toPredicate(node.right, ctx)],
-          };
+          return or([toPredicate(node.left, ctx), toPredicate(node.right, ctx)]);
         case '=':
           return comparison(node.left, node.right, '==', ctx);
         case '!=':
@@ -229,13 +223,13 @@ function toPredicate(node: any, ctx: Context): Predicate {
 
   if (node.type === 'literal') {
     const value = toLiteralValue(node);
-    return { type: 'CONSTANT', value: Boolean(value) };
+    return constant(Boolean(value));
   }
 
   if (node.type === 'identifier' && node.variant === 'column') {
     const { alias, column } = resolveColumn(node.name, ctx);
     const expr = field(`${alias}.${column}`);
-    return { type: 'COMPARISON', left: expr, right: literal(true), operation: '==' };
+    return eq(expr, literal(true));
   }
 
   throw new Error(`Unsupported predicate node: ${JSON.stringify(node)}`);
@@ -300,7 +294,7 @@ function resolveColumn(name: string, ctx: Context): { alias: string; column: str
 
 function combinePredicates(predicates: Predicate[], type: 'AND' | 'OR' = 'AND'): Predicate {
   if (predicates.length === 1) return predicates[0];
-  return { type, conditions: predicates };
+  return type === 'AND' ? and(predicates) : or(predicates);
 }
 
 function toLiteralValue(node: any): any {

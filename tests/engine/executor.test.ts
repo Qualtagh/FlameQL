@@ -1,4 +1,4 @@
-import { collection, field, projection } from '../../src/api/api';
+import { collection, eq, field, projection } from '../../src/api/api';
 import { JoinNode, ProjectNode } from '../../src/engine/ast';
 import { Executor } from '../../src/engine/executor';
 import { Planner } from '../../src/engine/planner';
@@ -93,12 +93,7 @@ describe('Executor', () => {
 
     // Manually set join condition for now since Planner doesn't extract it yet
     const joinNode = plan.source as JoinNode;
-    joinNode.condition = {
-      type: 'COMPARISON',
-      left: field('j.#id'),
-      right: field('s.jobId'),
-      operation: '==',
-    };
+    joinNode.condition = eq(field('j.#id'), field('s.jobId'));
 
     const executor = new Executor(db);
     const results = await executor.execute(plan);
