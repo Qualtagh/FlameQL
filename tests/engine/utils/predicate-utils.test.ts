@@ -144,6 +144,75 @@ describe('Predicate Utilities', () => {
       });
     });
 
+    it('merges OR of equality with inequalities into inclusive bounds', () => {
+      const ltOrEq: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '<', left: field('u.score'), right: literal(5) },
+          { type: 'COMPARISON', operation: '==', left: field('u.score'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(ltOrEq)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '<=',
+        left: field('u.score'),
+        right: literal(5),
+      });
+
+      const gtOrEq: Predicate = {
+        type: 'OR',
+        conditions: [
+          { type: 'COMPARISON', operation: '>', left: field('u.level'), right: literal(10) },
+          { type: 'COMPARISON', operation: '==', left: field('u.level'), right: literal(10) },
+        ],
+      };
+      expect(simplifyPredicate(gtOrEq)).toStrictEqual({
+        type: 'COMPARISON',
+        operation: '>=',
+        left: field('u.level'),
+        right: literal(10),
+      });
+    });
+
+    it('detects contradictory equality against inequalities', () => {
+      const predicate: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '<', left: field('u.age'), right: literal(5) },
+          { type: 'COMPARISON', operation: '==', left: field('u.age'), right: literal(5) },
+        ],
+      };
+      expect(simplifyPredicate(predicate)).toStrictEqual({ type: 'CONSTANT', value: false });
+
+      const disjoint: Predicate = {
+        type: 'AND',
+        conditions: [
+          { type: 'COMPARISON', operation: '<', left: field('u.age'), right: literal(5) },
+          { type: 'COMPARISON', operation: '>', left: field('u.age'), right: literal(7) },
+        ],
+      };
+      expect(simplifyPredicate(disjoint)).toStrictEqual({ type: 'CONSTANT', value: false });
+    });
+
+    it('prunes inList by scalar bounds', () => {
+      const predicate: Predicate = {
+        type: 'AND',
+        conditions: [
+          inList(field('u.id'), [literal(1), literal(2), literal(5), literal(7)]),
+          { type: 'COMPARISON', operation: '>', left: field('u.id'), right: literal(4) },
+          { type: 'COMPARISON', operation: '<=', left: field('u.id'), right: literal(7) },
+        ],
+      };
+
+      const result = simplifyPredicate(predicate);
+      expect(result).toStrictEqual({
+        type: 'COMPARISON',
+        operation: 'in',
+        left: field('u.id'),
+        right: [literal(5), literal(7)],
+      });
+    });
+
     it('applies scalar inequality rules (< A || > A => != A) and detects contradictions for AND', () => {
       const orPredicate: Predicate = {
         type: 'OR',

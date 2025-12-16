@@ -323,6 +323,7 @@ function mergeAndConditions(conditions: Predicate[]): Predicate[] {
     field: Field;
     firstIndex: number;
     eq?: Literal;
+    inValues?: Literal[];
     neqValues: Literal[];
     notInValues: Literal[];
     inequalities: Array<{ op: WhereFilterOp; right: Literal }>;
@@ -391,6 +392,22 @@ function mergeAndConditions(conditions: Predicate[]): Predicate[] {
           bucket.others.push(cond);
         }
         break;
+      case 'in':
+        if (Array.isArray(right) && right.every(isLiteralExpr)) {
+          const literals = dedupeExpressions(right) as Literal[];
+          if (bucket.inValues) {
+            const intersected = intersectLiterals(bucket.inValues, literals);
+            if (intersected.length === 0) {
+              bucket.contradiction = true;
+            }
+            bucket.inValues = intersected;
+          } else {
+            bucket.inValues = literals;
+          }
+        } else {
+          bucket.others.push(cond);
+        }
+        break;
       case '<':
       case '<=':
       case '>':
@@ -431,6 +448,7 @@ function mergeAndConditions(conditions: Predicate[]): Predicate[] {
 function buildBucketPredicates(bucket: {
   field: Field;
   eq?: Literal;
+  inValues?: Literal[];
   neqValues: Literal[];
   notInValues: Literal[];
   inequalities: Array<{ op: WhereFilterOp; right: Literal }>;
@@ -490,7 +508,35 @@ function buildBucketPredicates(bucket: {
   if (inequalityResult.contradiction) {
     return { predicates: [], contradiction: true };
   }
-  predicates.push(...inequalityResult.predicates);
+
+  if (bucket.inValues) {
+    const filtered = bucket.inValues.filter(lit => {
+      if (negativeValues.some(v => expressionsEqual(v, lit))) {
+        return false;
+      }
+      if (inequalityResult.lower && !evaluateLiteralVsLiteral(lit, inequalityResult.lower.inclusive ? '>=' : '>', inequalityResult.lower.literal)) {
+        return false;
+      }
+      if (inequalityResult.upper && !evaluateLiteralVsLiteral(lit, inequalityResult.upper.inclusive ? '<=' : '<', inequalityResult.upper.literal)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      return { predicates: [], contradiction: true };
+    }
+
+    if (filtered.length === 1) {
+      predicates.push({ type: 'COMPARISON', operation: '==', left: bucket.field, right: filtered[0] });
+    } else {
+      predicates.push({ type: 'COMPARISON', operation: 'in', left: bucket.field, right: filtered });
+    }
+  }
+
+  if (!bucket.inValues) {
+    predicates.push(...inequalityResult.predicates);
+  }
   predicates.push(...bucket.others);
 
   return { predicates };
@@ -499,7 +545,12 @@ function buildBucketPredicates(bucket: {
 function reduceInequalities(
   inequalities: Array<{ op: WhereFilterOp; right: Literal }>,
   field: Field
-): { predicates: Predicate[]; contradiction?: boolean } {
+): {
+  predicates: Predicate[];
+  contradiction?: boolean;
+  lower?: { value: any; inclusive: boolean; literal: Literal };
+  upper?: { value: any; inclusive: boolean; literal: Literal };
+} {
   if (inequalities.length === 0) {
     return { predicates: [] };
   }
@@ -531,6 +582,8 @@ function reduceInequalities(
       if (lower.inclusive && upper.inclusive) {
         return {
           predicates: [{ type: 'COMPARISON', operation: '==', left: field, right: lower.literal }],
+          lower,
+          upper,
         };
       }
       return { predicates: [], contradiction: true };
@@ -555,7 +608,7 @@ function reduceInequalities(
     });
   }
 
-  return { predicates };
+  return { predicates, lower, upper };
 }
 
 function rewriteScalarOr(conditions: Predicate[]): Predicate[] {
@@ -568,6 +621,61 @@ function rewriteScalarOr(conditions: Predicate[]): Predicate[] {
     if (first.type === 'COMPARISON') {
       const field = asField(first.left);
       const right = first.right;
+      if (field && !Array.isArray(right) && isLiteralExpr(right)) {
+        const op1 = first.operation;
+        const lit = right;
+
+        // Try to merge with an equality/inequality partner.
+        const peers: number[] = [];
+        for (let j = i + 1; j < conditions.length; j++) {
+          if (processed[j]) continue;
+          const other = conditions[j];
+          if (other.type !== 'COMPARISON') continue;
+          const otherField = asField(other.left);
+          if (!otherField || !fieldsEqual(field, otherField)) continue;
+          if (Array.isArray(other.right) || !isLiteralExpr(other.right)) continue;
+          if (!expressionsEqual(lit, other.right)) continue;
+
+          const op2 = other.operation;
+          const op1IsLt = op1 === '<' || op1 === '<=';
+          const op1IsGt = op1 === '>' || op1 === '>=';
+          const op2IsLt = op2 === '<' || op2 === '<=';
+          const op2IsGt = op2 === '>' || op2 === '>=';
+
+          // (< A || == A) => <= A; (> A || == A) => >= A and symmetric orders.
+          const isEqFirst = op1 === '==';
+          const isEqOther = op2 === '==';
+          if (isEqFirst && op2IsLt || isEqOther && op1IsLt) {
+            peers.push(j);
+            const merged: ComparisonPredicate = { type: 'COMPARISON', operation: '<=', left: field, right: lit };
+            result.push(merged);
+            processed[i] = true;
+            peers.forEach(idx => processed[idx] = true);
+            break;
+          }
+          if (isEqFirst && op2IsGt || isEqOther && op1IsGt) {
+            peers.push(j);
+            const merged: ComparisonPredicate = { type: 'COMPARISON', operation: '>=', left: field, right: lit };
+            result.push(merged);
+            processed[i] = true;
+            peers.forEach(idx => processed[idx] = true);
+            break;
+          }
+
+          // (< A || > A) => != A
+          if (op1 === '<' && op2 === '>' || op1 === '>' && op2 === '<') {
+            peers.push(j);
+            const merged: ComparisonPredicate = { type: 'COMPARISON', operation: '!=', left: field, right: lit };
+            result.push(merged);
+            processed[i] = true;
+            peers.forEach(idx => processed[idx] = true);
+            break;
+          }
+        }
+        if (processed[i]) {
+          continue;
+        }
+      }
       if (field && !Array.isArray(right) && isLiteralExpr(right) && (first.operation === '<' || first.operation === '>')) {
         const peers: number[] = [];
         for (let j = i + 1; j < conditions.length; j++) {
@@ -750,6 +858,10 @@ function dedupeExpressions(list: Expression[]): Expression[] {
   const out: Expression[] = [];
   list.forEach(expr => pushUniqueExpression(out, expr));
   return out;
+}
+
+function intersectLiterals(a: Literal[], b: Literal[]): Literal[] {
+  return a.filter(item => b.some(other => expressionsEqual(item, other)));
 }
 
 function pushUniqueExpression(list: Expression[], expr: Expression) {
