@@ -2,11 +2,10 @@ import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
 import { IndexManager } from '../indexes/index-manager';
 import { Operator, SortOrder } from './operator';
-import { PreparedFirestoreScan } from './prepared-firestore-scan';
+import { PreparedFirestoreCursor, PreparedFirestoreScan } from './prepared-firestore-scan';
 
 export class FirestoreScan implements Operator {
-  private rows: any[] | null = null;
-  private index = 0;
+  private cursor: PreparedFirestoreCursor | null = null;
   private sortOrder?: SortOrder;
 
   constructor(
@@ -16,7 +15,7 @@ export class FirestoreScan implements Operator {
   ) { }
 
   async next(): Promise<any | null> {
-    if (!this.rows) {
+    if (!this.cursor) {
       if (this.node.orderBy && this.node.orderBy.length > 0) {
         this.sortOrder = {
           // Operators reason about sort order on the *row stream*, which is aliased:
@@ -28,18 +27,14 @@ export class FirestoreScan implements Operator {
       }
 
       const prepared = new PreparedFirestoreScan(this.db, this.node);
-      this.rows = await prepared.fetch({
+      this.cursor = prepared.createCursor({
         includeBaseWhere: true,
         includeScanOrderBy: true,
         includeScanLimitOffset: true,
       });
     }
 
-    if (this.index < this.rows.length) {
-      return this.rows[this.index++];
-    }
-
-    return null;
+    return this.cursor.next();
   }
 
   getSortOrder(): SortOrder | undefined {

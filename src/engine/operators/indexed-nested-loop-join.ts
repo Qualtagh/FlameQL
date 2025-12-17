@@ -198,7 +198,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     if (values.length === 0) return true;
 
     // Fetch right rows for this batch via the prepared scan.
-    const rightRows = await this.rightPrepared.fetch({
+    const cursor = this.rightPrepared.createCursor({
       includeBaseWhere: true,
       includeScanOrderBy: false,
       includeScanLimitOffset: false,
@@ -209,8 +209,9 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       }],
     });
 
-    // Index right rows by the join key(s) for fast matching.
-    for (const rightRow of rightRows) {
+    while (true) {
+      const rightRow = await cursor.next();
+      if (!rightRow) break;
       this.indexRightRow(rightRow);
     }
 
@@ -257,14 +258,16 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       const out: any[] = [];
 
       for (const chunk of chunkArray(unique, IndexedNestedLoopJoinOperator.FIRESTORE_IN_MAX)) {
-        const rows = await this.rightPrepared.fetch({
+        const cursor = this.rightPrepared.createCursor({
           includeBaseWhere: true,
           includeScanOrderBy: false,
           includeScanLimitOffset: false,
           extraWhere: [{ fieldPath, op, value: chunk }],
         });
 
-        for (const row of rows) {
+        while (true) {
+          const row = await cursor.next();
+          if (!row) break;
           const path = row?.[alias]?.[DOC_PATH] as string | undefined;
           if (!path) {
             out.push(row);
@@ -282,12 +285,20 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     // Scalar ops.
     if (leftVal === undefined || leftVal === null) return [];
 
-    return this.rightPrepared.fetch({
+    const cursor = this.rightPrepared.createCursor({
       includeBaseWhere: true,
       includeScanOrderBy: false,
       includeScanLimitOffset: false,
       extraWhere: [{ fieldPath, op, value: leftVal }],
     });
+
+    const out: any[] = [];
+    while (true) {
+      const row = await cursor.next();
+      if (!row) break;
+      out.push(row);
+    }
+    return out;
   }
 
   private serializeKey(value: any): string | null {

@@ -18,6 +18,48 @@ export interface PreparedFirestoreScanPlan {
   baseWhere: FirestoreWhereConstraint[];
 }
 
+export interface PreparedFirestoreCursorOptions {
+  extraWhere?: FirestoreWhereConstraint[];
+  includeBaseWhere?: boolean;
+  orderBy?: FirestoreOrderBy[];
+  includeScanOrderBy?: boolean;
+  limit?: number;
+  offset?: number;
+  includeScanLimitOffset?: boolean;
+}
+
+export class PreparedFirestoreCursor {
+  private iterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot>;
+  private exhausted = false;
+
+  constructor(
+    private plan: PreparedFirestoreScanPlan,
+    query: admin.firestore.Query
+  ) {
+    const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
+    this.iterator = stream[Symbol.asyncIterator]();
+  }
+
+  async next(): Promise<any | null> {
+    if (this.exhausted) return null;
+
+    while (true) {
+      const { value, done } = await this.iterator.next();
+      if (done || !value) {
+        this.exhausted = true;
+        return null;
+      }
+
+      const row = docToAliasedRow(this.plan.scan.alias, value);
+      if (!evaluatePredicate(this.plan.postFilter, row)) {
+        continue;
+      }
+
+      return row;
+    }
+  }
+}
+
 export class PreparedFirestoreScan {
   readonly plan: PreparedFirestoreScanPlan;
 
@@ -28,15 +70,7 @@ export class PreparedFirestoreScan {
     this.plan = prepareFirestoreScanPlan(node);
   }
 
-  async fetch(opts?: {
-    extraWhere?: FirestoreWhereConstraint[];
-    includeBaseWhere?: boolean;
-    orderBy?: FirestoreOrderBy[];
-    includeScanOrderBy?: boolean;
-    limit?: number;
-    offset?: number;
-    includeScanLimitOffset?: boolean;
-  }): Promise<any[]> {
+  createCursor(opts?: PreparedFirestoreCursorOptions): PreparedFirestoreCursor {
     const {
       extraWhere = [],
       includeBaseWhere = true,
@@ -82,16 +116,7 @@ export class PreparedFirestoreScan {
       limit: resolvedLimit,
     });
 
-    const snapshot = await query.get();
-    const rows: any[] = [];
-    for (const doc of snapshot.docs) {
-      const row = docToAliasedRow(scan.alias, doc);
-      if (!evaluatePredicate(this.plan.postFilter, row)) {
-        continue;
-      }
-      rows.push(row);
-    }
-    return rows;
+    return new PreparedFirestoreCursor(this.plan, query);
   }
 }
 
