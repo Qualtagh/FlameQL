@@ -27,3 +27,31 @@ export class FunctionExpression {
 export function apply(input: ExpressionInput, fn: (value: any) => any): FunctionExpression {
   return new FunctionExpression(input, fn);
 }
+
+export function concatenate(exprs: ExpressionInput[]): FunctionExpression {
+  return apply(exprs, (values: any[]) => values.join(''));
+}
+
+export function lowercase(expr: ExpressionInput): FunctionExpression {
+  return apply(expr, (s: string) => s.toLowerCase());
+}
+
+export function uppercase(expr: ExpressionInput): FunctionExpression {
+  return apply(expr, (s: string) => s.toUpperCase());
+}
+
+export function add(a: ExpressionInput, b: ExpressionInput): FunctionExpression {
+  return apply([a, b], ([x, y]: [number, number]) => x + y);
+}
+
+export function subtract(a: ExpressionInput, b: ExpressionInput): FunctionExpression {
+  return apply([a, b], ([x, y]: [number, number]) => x - y);
+}
+
+export function multiply(a: ExpressionInput, b: ExpressionInput): FunctionExpression {
+  return apply([a, b], ([x, y]: [number, number]) => x * y);
+}
+
+export function divide(a: ExpressionInput, b: ExpressionInput): FunctionExpression {
+  return apply([a, b], ([x, y]: [number, number]) => x / y);
+}

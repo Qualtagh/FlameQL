@@ -2,7 +2,7 @@ export type { FirestoreIndexJson } from '../engine/indexes/index-manager';
 export { collection, collectionGroup } from './collection';
 export { FlameConfig } from './config';
 export { field } from './field';
-export { apply } from './function-expression';
+export { add, apply, concatenate, divide, lowercase, multiply, subtract, uppercase } from './function-expression';
 export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode } from './hints';
 export { literal } from './literal';
 export { param } from './param';
