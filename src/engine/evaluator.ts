@@ -1,4 +1,4 @@
-import { Expression, Field, Predicate } from '../api/expression';
+import { Expression, ExpressionInput, Field, FunctionExpression, Predicate } from '../api/expression';
 import { DOC_COLLECTION, DOC_ID, DOC_PARENT, DOC_PATH } from './symbols';
 import { createOperationComparator } from './utils/operation-comparator';
 
@@ -25,12 +25,20 @@ export function evaluate(expr: Expression, row: any): any {
     case 'Param':
       throw new Error('Param evaluation is not supported at runtime.');
     case 'FunctionExpression': {
-      const value = evaluate(expr.input as Expression, row);
-      return expr.fn(value);
+      const funcExpr = expr as FunctionExpression;
+      const value = evaluateInput(funcExpr.input, row);
+      return funcExpr.fn(value);
     }
     default:
       expr satisfies never;
   }
+}
+
+function evaluateInput(expr: ExpressionInput, row: any): any {
+  if (Array.isArray(expr)) {
+    return expr.map(item => evaluateInput(item, row));
+  }
+  return evaluate(expr, row);
 }
 
 export function evaluatePredicate(predicate: Predicate, row: any): boolean {

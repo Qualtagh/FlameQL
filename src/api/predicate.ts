@@ -39,6 +39,7 @@ export const { expression: expressionType, predicate: predicateType } = type.mod
 });
 
 export type Expression = typeof expressionType.infer;
+export type ExpressionInput = Expression | ExpressionInput[];
 export type Predicate = typeof predicateType.infer;
 export type ComparisonPredicate = Extract<Predicate, { type: 'COMPARISON' }>;
 export type CompositePredicate = Extract<Predicate, { type: 'AND' | 'OR' }>;

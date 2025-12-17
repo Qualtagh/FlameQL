@@ -1,4 +1,4 @@
-import { and, arrayContains, arrayContainsAny, collection, eq, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
+import { and, apply, arrayContains, arrayContainsAny, collection, eq, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -179,5 +179,45 @@ describe('runQuery API', () => {
 
     const warmResults = await runQuery(arrayContainsPredicate, { db });
     expect(warmResults.map(r => r.color).sort()).toEqual(['red']);
+  });
+
+  it('supports apply with array inputs in Firestore projections', async () => {
+    await db.collection('jobs').doc('j1').set({ title: 'Engineer', userId: 'user-1' });
+
+    const p = projection({
+      id: 'apply-array-projection',
+      from: { j: collection('jobs') },
+      select: {
+        path: apply([literal('/users/'), field('j.userId'), literal('/jobs')], parts => parts.join('')),
+        shout: apply(
+          [[field('j.title'), literal('!')], literal(' ')],
+          ([segments, delimiter]) => (segments as any[]).join(delimiter as string)
+        ),
+      },
+    });
+
+    const results = await runQuery(p, { db });
+    expect(results).toEqual([{ path: '/users/user-1/jobs', shout: 'Engineer !' }]);
+  });
+
+  it('evaluates apply with nested array inputs inside predicates', async () => {
+    await db.collection('orders').doc('o1').set({ userId: 'u1', status: 'open' });
+    await db.collection('orders').doc('o2').set({ userId: 'u2', status: 'closed' });
+
+    const p = projection({
+      id: 'apply-array-predicate',
+      from: { o: collection('orders') },
+      where: eq(
+        apply(
+          [[field('o.userId'), literal(':'), field('o.status')]],
+          parts => (parts[0] as any[]).join('')
+        ),
+        literal('u1:open')
+      ),
+      select: { userId: field('o.userId'), status: field('o.status') },
+    });
+
+    const results = await runQuery(p, { db });
+    expect(results).toEqual([{ userId: 'u1', status: 'open' }]);
   });
 });

@@ -1,6 +1,6 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { and, arrayContains, arrayContainsAny, constant, eq, gt, gte, inList, lt, lte, ne, not, notInList, or } from '../../api/api';
-import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
+import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
 import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
@@ -1320,7 +1320,11 @@ function predicatesListKey(list: Predicate[]): string {
   return list.map(predicateKey).sort().join('|');
 }
 
-function exprKey(expr: Expression): string {
+function exprKey(expr: ExpressionInput): string {
+  if (Array.isArray(expr)) {
+    return `[${expr.map(exprKey).join(',')}]`;
+  }
+
   if (isFieldExpr(expr)) {
     return `F:${expr.source ?? ''}:${expr.path.join('.')}`;
   }
@@ -1337,7 +1341,15 @@ function exprKey(expr: Expression): string {
   return 'UNK';
 }
 
-function expressionsEqual(a: Expression, b: Expression): boolean {
+function expressionsEqual(a: ExpressionInput, b: ExpressionInput): boolean {
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+
+  if (aIsArray || bIsArray) {
+    if (!aIsArray || !bIsArray) return false;
+    return expressionsArrayEqual(a, b);
+  }
+
   if (a === b) return true;
   if (a.kind !== b.kind) return false;
 
@@ -1366,7 +1378,7 @@ function expressionsEqual(a: Expression, b: Expression): boolean {
 
 }
 
-function expressionsOrListEqual(a: Expression | Expression[], b: Expression | Expression[]): boolean {
+function expressionsOrListEqual(a: ExpressionInput | ExpressionInput[], b: ExpressionInput | ExpressionInput[]): boolean {
   const aIsArray = Array.isArray(a);
   const bIsArray = Array.isArray(b);
 
@@ -1378,7 +1390,7 @@ function expressionsOrListEqual(a: Expression | Expression[], b: Expression | Ex
   return expressionsEqual(a, b);
 }
 
-function expressionsArrayEqual(left: Expression[], right: Expression[]): boolean {
+function expressionsArrayEqual(left: ExpressionInput[], right: ExpressionInput[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((expr, idx) => expressionsEqual(expr, right[idx]));
 }

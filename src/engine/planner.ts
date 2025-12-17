@@ -1,5 +1,5 @@
 import { and, constant, JoinStrategy, literal, not, or, PredicateMode, PredicateOrMode } from '../api/api';
-import { Collection, Expression, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
+import { Collection, Expression, ExpressionInput, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
 import { Constraint, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
@@ -980,15 +980,23 @@ export class Planner {
     }
   }
 
+  private normalizeExpressionInput(expr: ExpressionInput, aliases: Set<string>): ExpressionInput {
+    if (Array.isArray(expr)) {
+      return expr.map(item => this.normalizeExpressionInput(item, aliases));
+    }
+    return this.normalizeExpression(expr, aliases);
+  }
+
   private normalizeExpression(expr: any, aliases: Set<string>): Expression {
     if (expr instanceof Param || expr && typeof expr === 'object' && expr.kind === 'Param') {
       return this.resolveParam((expr as Param).name);
     }
     if (expr instanceof FunctionExpression || expr && typeof expr === 'object' && expr.kind === 'FunctionExpression') {
       const funcExpr = expr as FunctionExpression;
-      const normalizedInput = this.normalizeExpression(funcExpr.input, aliases);
-      if (normalizedInput.kind === 'Literal') {
-        const folded = funcExpr.fn(normalizedInput.value);
+      const normalizedInput = this.normalizeExpressionInput(funcExpr.input, aliases);
+      const foldedInput = this.tryFoldFunctionInput(normalizedInput);
+      if (foldedInput.foldable) {
+        const folded = funcExpr.fn(foldedInput.value);
         return this.toLiteralValue(folded);
       }
       return new FunctionExpression(normalizedInput, funcExpr.fn);
@@ -1007,6 +1015,26 @@ export class Planner {
       return this.toLiteralValue(expr);
     }
     throw new Error('Unsupported expression in predicate. Use alias-qualified fields or parameters.');
+  }
+
+  private tryFoldFunctionInput(input: ExpressionInput): { foldable: boolean; value?: any } {
+    if (Array.isArray(input)) {
+      const values: any[] = [];
+      for (const item of input) {
+        const folded = this.tryFoldFunctionInput(item);
+        if (!folded.foldable) {
+          return { foldable: false };
+        }
+        values.push(folded.value);
+      }
+      return { foldable: true, value: values };
+    }
+
+    if (input.kind === 'Literal') {
+      return { foldable: true, value: input.value };
+    }
+
+    return { foldable: false };
   }
 
   private resolveParam(name: string): Literal {

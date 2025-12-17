@@ -1,5 +1,5 @@
 import { type } from 'arktype';
-import type { Expression } from './predicate';
+import { ExpressionInput } from './predicate';
 
 export const { functionExpression: functionExpressionType } = type.module({
   functionExpression: {
@@ -11,12 +11,12 @@ export const { functionExpression: functionExpressionType } = type.module({
 
 export interface FunctionExpression {
   kind: 'FunctionExpression';
-  input: Expression;
+  input: ExpressionInput;
   fn: (value: any) => any;
 }
 
 export class FunctionExpression {
-  constructor(input: Expression, fn: (value: any) => any) {
+  constructor(input: ExpressionInput, fn: (value: any) => any) {
     const parsed = functionExpressionType.assert({ kind: 'FunctionExpression', input, fn });
     this.kind = parsed.kind;
     this.input = input;
@@ -24,6 +24,6 @@ export class FunctionExpression {
   }
 }
 
-export function apply(input: Expression, fn: (value: any) => any): FunctionExpression {
+export function apply(input: ExpressionInput, fn: (value: any) => any): FunctionExpression {
   return new FunctionExpression(input, fn);
 }
