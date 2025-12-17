@@ -1,6 +1,6 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { and, arrayContains, arrayContainsAny, constant, eq, gt, gte, inList, lt, lte, ne, not, notInList, or } from '../../api/api';
-import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
+import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
 import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
@@ -1327,6 +1327,10 @@ function exprKey(expr: Expression): string {
   if (isLiteralExpr(expr)) {
     return `L:${(expr as Literal).value}`;
   }
+  if (isFunctionExpression(expr)) {
+    const fnSig = typeof expr.fn === 'function' ? expr.fn.toString() : 'fn';
+    return `FN:${exprKey(expr.input)}:${fnSig}`;
+  }
   if (expr.kind === 'Param') {
     return `P:${(expr as Param).name}`;
   }
@@ -1353,7 +1357,13 @@ function expressionsEqual(a: Expression, b: Expression): boolean {
       const paramB = b as Param;
       return paramA.name === paramB.name;
     }
+    case 'FunctionExpression': {
+      const funcA = a as FunctionExpression;
+      const funcB = b as FunctionExpression;
+      return expressionsEqual(funcA.input, funcB.input) && funcA.fn === funcB.fn;
+    }
   }
+
 }
 
 function expressionsOrListEqual(a: Expression | Expression[], b: Expression | Expression[]): boolean {
@@ -1380,6 +1390,10 @@ function arrayEquals(left: unknown[], right: unknown[]): boolean {
 
 function isFieldExpr(expr: Expression): expr is Field {
   return expr?.kind === 'Field';
+}
+
+function isFunctionExpression(expr: Expression): expr is FunctionExpression {
+  return expr?.kind === 'FunctionExpression';
 }
 
 function asField(expr: Expression): Field | null {

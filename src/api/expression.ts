@@ -1,5 +1,6 @@
 export { Collection } from './collection';
 export { Field } from './field';
+export { FunctionExpression } from './function-expression';
 export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode, queryHints } from './hints';
 export { Literal, LiteralType } from './literal';
 export { orderBy, orderByEntry } from './order-by';

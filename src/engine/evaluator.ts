@@ -24,6 +24,10 @@ export function evaluate(expr: Expression, row: any): any {
       return expr.value;
     case 'Param':
       throw new Error('Param evaluation is not supported at runtime.');
+    case 'FunctionExpression': {
+      const value = evaluate(expr.input as Expression, row);
+      return expr.fn(value);
+    }
     default:
       expr satisfies never;
   }

@@ -1,5 +1,5 @@
 import { and } from '../api/api';
-import { CompositePredicate, Expression, Field, Predicate } from '../api/expression';
+import { CompositePredicate, Expression, Field, FunctionExpression, Predicate } from '../api/expression';
 import { simplifyPredicate } from './utils/predicate-utils';
 
 export interface SplitPredicates {
@@ -86,6 +86,11 @@ export class PredicateSplitter {
   private collectFromExpression(expr: Expression | Expression[], sources: string[], involved: Set<string>) {
     if (Array.isArray(expr)) {
       expr.forEach(item => this.collectFromExpression(item, sources, involved));
+      return;
+    }
+
+    if (expr.kind === 'FunctionExpression') {
+      this.collectFromExpression((expr as FunctionExpression).input, sources, involved);
       return;
     }
 

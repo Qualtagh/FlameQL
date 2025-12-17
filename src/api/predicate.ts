@@ -2,6 +2,7 @@ import { WhereFilterOp } from '@google-cloud/firestore';
 import { type } from 'arktype';
 import { whereFilterOpType } from './external-types';
 import { Field, fieldType } from './field';
+import { functionExpressionType } from './function-expression';
 import { literalType } from './literal';
 import { paramType } from './param';
 
@@ -9,8 +10,9 @@ export const { expression: expressionType, predicate: predicateType } = type.mod
   field: fieldType,
   literal: literalType,
   param: paramType,
+  functionExpression: functionExpressionType,
   whereFilterOp: whereFilterOpType,
-  expression: 'field | literal | param',
+  expression: 'field | literal | param | functionExpression',
   COMPARISON: {
     type: "'COMPARISON'",
     left: 'expression',

@@ -1,5 +1,5 @@
 import { and, constant, JoinStrategy, literal, not, or, PredicateMode, PredicateOrMode } from '../api/api';
-import { Collection, Expression, Field, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
+import { Collection, Expression, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
 import { Constraint, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
@@ -389,6 +389,10 @@ export class Planner {
     }
 
     if (predicate.type === 'COMPARISON') {
+      if (this.containsFunctionExpression(predicate.left) || this.containsFunctionExpression(predicate.right)) {
+        return nonIndexable + 1;
+      }
+
       const field = this.asField(predicate.left);
       const literal = !Array.isArray(predicate.right) && predicate.right.kind === 'Literal'
         ? predicate.right
@@ -414,6 +418,13 @@ export class Planner {
     }
 
     return 0;
+  }
+
+  private containsFunctionExpression(expr: any): boolean {
+    if (Array.isArray(expr)) {
+      return expr.some(item => this.containsFunctionExpression(item));
+    }
+    return !!expr && typeof expr === 'object' && expr.kind === 'FunctionExpression';
   }
 
   /**
@@ -973,6 +984,15 @@ export class Planner {
     if (expr instanceof Param || expr && typeof expr === 'object' && expr.kind === 'Param') {
       return this.resolveParam((expr as Param).name);
     }
+    if (expr instanceof FunctionExpression || expr && typeof expr === 'object' && expr.kind === 'FunctionExpression') {
+      const funcExpr = expr as FunctionExpression;
+      const normalizedInput = this.normalizeExpression(funcExpr.input, aliases);
+      if (normalizedInput.kind === 'Literal') {
+        const folded = funcExpr.fn(normalizedInput.value);
+        return this.toLiteralValue(folded);
+      }
+      return new FunctionExpression(normalizedInput, funcExpr.fn);
+    }
     if (typeof expr === 'string') {
       return this.parseField(expr, aliases);
     }
@@ -986,7 +1006,6 @@ export class Planner {
     if (typeof expr === 'number' || typeof expr === 'boolean' || expr === null) {
       return this.toLiteralValue(expr);
     }
-
     throw new Error('Unsupported expression in predicate. Use alias-qualified fields or parameters.');
   }
 
@@ -1013,7 +1032,7 @@ export class Planner {
     return ref;
   }
 
-  private toLiteralValue(value: Literal | number | boolean | null): Literal {
+  private toLiteralValue(value: Literal | string | number | boolean | null): Literal {
     return value instanceof Literal ? value : literal(value);
   }
 
