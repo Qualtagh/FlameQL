@@ -1,6 +1,6 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { and, arrayContains, arrayContainsAny, constant, eq, gt, gte, inList, lt, lte, ne, not, notInList, or } from '../../api/api';
-import { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
+import { ComparisonPredicate, CompositePredicate, ConstantPredicate, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
 import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
@@ -39,6 +39,8 @@ function simplifyOnce(predicate: Predicate): Predicate {
     case 'AND':
     case 'OR':
       return simplifyComposite(predicate);
+    case 'CUSTOM':
+      return predicate;
     default:
       predicate satisfies never;
       throw new Error(`Unsupported predicate type: ${predicate}`);
@@ -1294,6 +1296,11 @@ function predicatesEqual(a: Predicate, b: Predicate): boolean {
       const bComposite = b as CompositePredicate;
       if (a.conditions.length !== bComposite.conditions.length) return false;
       return a.conditions.every((c, i) => predicatesEqual(c, bComposite.conditions[i]));
+    }
+    case 'CUSTOM': {
+      const bCustom = b as CustomPredicate;
+      return a.fn === bCustom.fn &&
+        expressionsEqual(a.input as ExpressionInput, bCustom.input as ExpressionInput);
     }
   }
 }

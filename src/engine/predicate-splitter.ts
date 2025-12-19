@@ -80,6 +80,11 @@ export class PredicateSplitter {
 
     if (predicate.type === 'NOT') {
       this.collectSources(predicate.operand, sources, involved);
+      return;
+    }
+
+    if (predicate.type === 'CUSTOM') {
+      this.collectFromExpression(predicate.input as ExpressionInput, sources, involved);
     }
   }
 

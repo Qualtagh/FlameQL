@@ -6,7 +6,7 @@ export { add, apply, concatenate, divide, lowercase, multiply, subtract, upperca
 export { JoinStrategy, OrderByStrategy, PredicateMode, PredicateOrMode } from './hints';
 export { literal } from './literal';
 export { param } from './param';
-export { and, arrayContains, arrayContainsAny, constant, eq, gt, gte, inList, lt, lte, ne, not, notInList, or } from './predicate';
+export { and, arrayContains, arrayContainsAny, compare, constant, eq, gt, gte, inList, like, lt, lte, ne, not, notInList, or } from './predicate';
 export { projection } from './projection';
 export { runQuery } from './run-query';
 export type { RunQueryOptions } from './run-query';

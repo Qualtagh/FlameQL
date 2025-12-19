@@ -35,7 +35,13 @@ export const { expression: expressionType, predicate: predicateType } = type.mod
     type: "'CONSTANT'",
     value: 'boolean',
   },
-  predicate: 'COMPARISON | AND | OR | NOT | CONSTANT',
+  CUSTOM: {
+    type: "'CUSTOM'",
+    input: 'unknown',
+    fn: 'Function',
+    'metadata?': 'unknown',
+  },
+  predicate: 'COMPARISON | AND | OR | NOT | CONSTANT | CUSTOM',
 });
 
 export type Expression = typeof expressionType.infer;
@@ -45,6 +51,7 @@ export type ComparisonPredicate = Extract<Predicate, { type: 'COMPARISON' }>;
 export type CompositePredicate = Extract<Predicate, { type: 'AND' | 'OR' }>;
 export type NotPredicate = Extract<Predicate, { type: 'NOT' }>;
 export type ConstantPredicate = Extract<Predicate, { type: 'CONSTANT' }>;
+export type CustomPredicate = Extract<Predicate, { type: 'CUSTOM' }>;
 
 export function eq(left: Expression, right: Expression): ComparisonPredicate {
   return comparison('==', left, right);
@@ -104,4 +111,39 @@ export function constant(value: boolean): ConstantPredicate {
 
 function comparison(operation: WhereFilterOp, left: Expression, right: Expression | Expression[]): ComparisonPredicate {
   return { type: 'COMPARISON', operation, left, right };
+}
+
+export function compare(
+  input: ExpressionInput,
+  fn: (value: any) => boolean,
+  metadata?: any
+): CustomPredicate {
+  const custom = { type: 'CUSTOM', input, fn } as CustomPredicate;
+
+  if (metadata) {
+    custom.metadata = metadata;
+  }
+
+  return custom;
+}
+
+export function like(left: Expression, pattern: Expression): CustomPredicate {
+  const cache: { pattern?: string, regex?: RegExp } = {};
+  return compare(
+    [left, pattern],
+    ([value, pat]) => {
+      // Convert SQL LIKE pattern to regex
+      // % -> .*, _ -> .
+      // Escape special regex characters first
+      if (cache.pattern === pat) {
+        return cache.regex!.test(value);
+      }
+      const escaped = pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = escaped.replace(/%/g, '.*').replace(/_/g, '.');
+      cache.regex = new RegExp(`^${regex}$`);
+      cache.pattern = pat;
+      return cache.regex.test(value);
+    },
+    { name: 'like' }
+  );
 }

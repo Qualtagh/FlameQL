@@ -1,5 +1,5 @@
-import { and, constant, JoinStrategy, literal, not, or, PredicateMode, PredicateOrMode } from '../api/api';
-import { Collection, Expression, ExpressionInput, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
+import { and, constant, eq, gte, JoinStrategy, literal, lt, not, or, PredicateMode, PredicateOrMode } from '../api/api';
+import { Collection, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
 import { Constraint, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
@@ -7,6 +7,7 @@ import { PredicateSplitter } from './predicate-splitter';
 import { pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
 import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
 import { simplifyPredicate, toDNF } from './utils/predicate-utils';
+import { nextLexicographicString } from './utils/string-utils';
 
 export class Planner {
   private indexManager: IndexManager;
@@ -280,6 +281,8 @@ export class Planner {
         const parts = pred.conditions.map(c => this.predicateKey(c)).sort();
         return `OR:${parts.join('|')}`;
       }
+      case 'CUSTOM':
+        return `CUSTOM:${(pred as any).tag || 'unknown'}:${this.exprKey((pred as any).input)}`;
       default:
         pred satisfies never;
         return 'UNKNOWN';
@@ -413,7 +416,7 @@ export class Planner {
       return nonIndexable;
     }
 
-    if (predicate.type === 'OR' || predicate.type === 'NOT') {
+    if (predicate.type === 'OR' || predicate.type === 'NOT' || predicate.type === 'CUSTOM') {
       return 1;
     }
 
@@ -974,10 +977,49 @@ export class Planner {
         return not(this.normalizePredicate(predicate.operand, aliases));
       case 'CONSTANT':
         return predicate;
+      case 'CUSTOM':
+        return this.optimizeCustomPredicate(predicate, aliases);
       default:
         predicate satisfies never;
         throw new Error(`Unexpected predicate type: ${predicate}`);
     }
+  }
+
+  private optimizeCustomPredicate(predicate: CustomPredicate, aliases: Set<string>): Predicate {
+    // Only optimize LIKE predicates that haven't been optimized yet
+    const meta: any = predicate.metadata ?? {};
+    if (meta.optimized) return predicate;
+    if (meta.name === 'like') return this.optimizeLikePredicate(predicate, aliases);
+    return predicate;
+  }
+
+  private optimizeLikePredicate(predicate: CustomPredicate, aliases: Set<string>): Predicate {
+    const input = predicate.input as ExpressionInput;
+    if (!Array.isArray(input) || input.length !== 2) return predicate;
+    const [leftExpr, patternExpr] = input;
+    const field = this.asField(leftExpr);
+    if (!field) return predicate;
+    const normalizedPattern = this.normalizeExpression(patternExpr, aliases);
+    if (normalizedPattern.kind !== 'Literal') return predicate;
+    const pattern = normalizedPattern.value as string;
+    const percentIndex = pattern.indexOf('%');
+    const underscoreIndex = pattern.indexOf('_');
+    const isPlainString = percentIndex < 0 && underscoreIndex < 0;
+    if (isPlainString) return eq(field, normalizedPattern);
+    const wildcardIndex = percentIndex < 0 ? underscoreIndex :
+      underscoreIndex < 0 ? percentIndex :
+        Math.min(percentIndex, underscoreIndex);
+    if (wildcardIndex === 0) return predicate;
+    const prefix = pattern.substring(0, wildcardIndex);
+    const lowerBound = gte(field, literal(prefix));
+    const upperBoundPrefix = nextLexicographicString(prefix);
+    const upperBound = upperBoundPrefix == null ? null : lt(field, literal(upperBoundPrefix));
+    // Mark the original predicate as optimized to prevent infinite loops
+    const optimizedPredicate: CustomPredicate = {
+      ...predicate,
+      metadata: { ...(predicate.metadata as any), optimized: true },
+    };
+    return and([lowerBound, ...upperBound ? [upperBound] : [], optimizedPredicate]);
   }
 
   private normalizeExpressionInput(expr: ExpressionInput, aliases: Set<string>): ExpressionInput {

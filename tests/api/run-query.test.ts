@@ -1,4 +1,4 @@
-import { and, apply, arrayContains, arrayContainsAny, collection, eq, field, inList, literal, notInList, param, projection, runQuery } from '../../src/api/api';
+import { and, apply, arrayContains, arrayContainsAny, collection, eq, field, inList, like, literal, notInList, OrderByStrategy, param, projection, runQuery } from '../../src/api/api';
 import { clearDatabase, db } from '../setup';
 
 describe('runQuery API', () => {
@@ -219,5 +219,23 @@ describe('runQuery API', () => {
 
     const results = await runQuery(p, { db });
     expect(results).toEqual([{ userId: 'u1', status: 'open' }]);
+  });
+
+  it('like predicate', async () => {
+    await db.collection('users').doc('u1').set({ name: 'Alice' });
+    await db.collection('users').doc('u2').set({ name: 'Bob' });
+    await db.collection('users').doc('u3').set({ name: 'Beatrice' });
+
+    const listPredicate = projection({
+      id: 'like-predicate',
+      from: { u: collection('users') },
+      select: { name: field('u.name') },
+      where: like(field('u.name'), literal('B%')),
+      orderBy: ['u.name'],
+      hints: { orderBy: OrderByStrategy.PostFetchSort },
+    });
+
+    const listResults = await runQuery(listPredicate, { db });
+    expect(listResults).toEqual([{ name: 'Beatrice' }, { name: 'Bob' }]);
   });
 });

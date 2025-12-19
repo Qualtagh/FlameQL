@@ -7,5 +7,5 @@ export { orderBy, orderByEntry } from './order-by';
 export type { OrderByInput, OrderBySpec } from './order-by';
 export { Param } from './param';
 export { expressionType, predicateType } from './predicate';
-export type { ComparisonPredicate, CompositePredicate, ConstantPredicate, Expression, ExpressionInput, NotPredicate, Predicate } from './predicate';
+export type { ComparisonPredicate, CompositePredicate, ConstantPredicate, CustomPredicate, Expression, ExpressionInput, NotPredicate, Predicate } from './predicate';
 export { Projection } from './projection';

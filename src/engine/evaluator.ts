@@ -59,6 +59,11 @@ export function evaluatePredicate(predicate: Predicate, row: any): boolean {
       return !evaluatePredicate(predicate.operand, row);
     case 'CONSTANT':
       return predicate.value;
+    case 'CUSTOM': {
+      const custom = predicate;
+      const value = evaluateInput(custom.input as ExpressionInput, row);
+      return custom.fn(value);
+    }
     default:
       predicate satisfies never;
       throw new Error('Unexpected predicate type');
