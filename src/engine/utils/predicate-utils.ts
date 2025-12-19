@@ -591,7 +591,7 @@ function buildBucketPredicates(bucket: {
     }
 
     if (filtered.length === 1) {
-      predicates.push(inList(bucket.field, filtered));
+      predicates.push(eq(bucket.field, filtered[0]));
     } else {
       predicates.push(inList(bucket.field, filtered));
     }
