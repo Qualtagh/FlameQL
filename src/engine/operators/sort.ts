@@ -27,6 +27,7 @@ export class Sort implements Operator {
   getSortOrder(): SortOrder | undefined {
     if (!this.node.orderBy.length) return undefined;
     const primary = this.node.orderBy[0];
+    if (primary.field.kind !== 'Field') return undefined; // Only expose field-based sorts
     return { field: `${primary.field.source}.${primary.field.path.join('.')}`, direction: primary.direction };
   }
 

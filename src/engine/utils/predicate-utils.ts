@@ -1,6 +1,6 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
 import { and, arrayContains, arrayContainsAny, constant, eq, gt, gte, inList, lt, lte, ne, not, notInList, or } from '../../api/api';
-import { ComparisonPredicate, CompositePredicate, ConstantPredicate, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, NotPredicate, Param, Predicate } from '../../api/expression';
+import { ComparisonPredicate, CompositePredicate, ConstantPredicate, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, NotPredicate, OrderBySpec, Param, Predicate } from '../../api/expression';
 import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
@@ -1447,4 +1447,17 @@ function fieldKey(field: Field): string {
 
 function fieldsEqual(a: Field, b: Field): boolean {
   return fieldKey(a) === fieldKey(b);
+}
+
+export function orderBySpecsEqual(a: OrderBySpec[] | undefined, b: OrderBySpec[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+
+  return a.every((specA, idx) => {
+    const specB = b[idx];
+    if (!specA || !specB) return specA === specB;
+    if (specA.direction !== specB.direction) return false;
+    return expressionsEqual(specA.field, specB.field);
+  });
 }

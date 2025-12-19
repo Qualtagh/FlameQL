@@ -16,13 +16,16 @@ export class FirestoreScan implements Operator {
   async next(): Promise<any | null> {
     if (!this.cursor) {
       if (this.node.orderBy && this.node.orderBy.length > 0) {
-        this.sortOrder = {
-          // Operators reason about sort order on the *row stream*, which is aliased:
-          // `{ [alias]: docData }`. Use alias-qualified field refs for consistency with
-          // `Sort` and `MergeJoinOperator`.
-          field: `${this.node.alias}.${this.node.orderBy[0].field.path.join('.')}`,
-          direction: this.node.orderBy[0].direction,
-        };
+        const primary = this.node.orderBy[0];
+        if (primary.field.kind === 'Field') {
+          this.sortOrder = {
+            // Operators reason about sort order on the *row stream*, which is aliased:
+            // `{ [alias]: docData }`. Use alias-qualified field refs for consistency with
+            // `Sort` and `MergeJoinOperator`.
+            field: `${this.node.alias}.${primary.field.path.join('.')}`,
+            direction: primary.direction,
+          };
+        }
       }
 
       const prepared = new PreparedFirestoreScan(this.db, this.node, this.parameters);

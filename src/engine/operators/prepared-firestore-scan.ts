@@ -1,6 +1,6 @@
 import * as admin from 'firebase-admin';
 import { and, constant } from '../../api/api';
-import { Expression, Predicate } from '../../api/expression';
+import { Expression, Field, Predicate } from '../../api/expression';
 import { Constraint, ExecutionNode, FilterNode, NodeType, ScanNode } from '../ast';
 import { evaluate, evaluatePredicate } from '../evaluator';
 import { buildFirestoreQuery, docToAliasedRow, FirestoreOrderBy, FirestoreWhereConstraint } from '../utils/firestore-utils';
@@ -103,7 +103,9 @@ export class PreparedFirestoreScan {
 
     const resolvedOrderBy: FirestoreOrderBy[] | undefined = orderBy ?? (
       includeScanOrderBy && scan.orderBy && scan.orderBy.length > 0
-        ? scan.orderBy.map(o => ({ fieldPath: o.field.path.join('.'), direction: o.direction }))
+        ? scan.orderBy
+          .filter(o => o.field.kind === 'Field')
+          .map(o => ({ fieldPath: (o.field as Field).path.join('.'), direction: o.direction }))
         : undefined
     );
 

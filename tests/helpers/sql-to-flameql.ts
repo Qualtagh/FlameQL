@@ -169,14 +169,14 @@ function flattenSources(fromNode: any): { sources: SourceDef[]; joinPredicates: 
 function toOrder(node: any, ctx: Context) {
   if (node.type === 'identifier' && node.variant === 'column') {
     const { alias, column } = resolveColumn(node.name, ctx);
-    return { field: `${alias}.${column}`, direction: 'asc' as const };
+    return { field: field(`${alias}.${column}`), direction: 'asc' as const };
   }
   if (node.type === 'expression' && node.variant === 'order') {
     const expr = node.expression;
     if (expr.type === 'identifier' && expr.variant === 'column') {
       const { alias, column } = resolveColumn(expr.name, ctx);
       return {
-        field: `${alias}.${column}`,
+        field: field(`${alias}.${column}`),
         direction: node.direction === 'desc' ? ('desc' as const) : ('asc' as const),
       };
     }

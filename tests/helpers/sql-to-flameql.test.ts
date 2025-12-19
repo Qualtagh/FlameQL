@@ -25,7 +25,7 @@ describe('translateSqlToFlame', () => {
         eq(field('u.role'), literal('user')),
         eq(field('u.active'), literal(1)),
       ]),
-      orderBy: [{ field: 'u.name', direction: 'desc' }],
+      orderBy: [{ field: field('u.name'), direction: 'desc' }],
       limit: 5,
       offset: 2,
     });
@@ -72,7 +72,7 @@ describe('translateSqlToFlame', () => {
         eq(field('u.id'), literal(2)),
         eq(field('u.id'), literal(3)),
       ]),
-      orderBy: [{ field: 'u.id', direction: 'asc' }],
+      orderBy: [{ field: field('u.id'), direction: 'asc' }],
     });
 
     expect(normalizeProjection(t.projection)).toEqual(normalizeProjection(expected));

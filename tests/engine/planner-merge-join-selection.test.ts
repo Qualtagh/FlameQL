@@ -1,4 +1,5 @@
 import { and, collection, field, gt, JoinStrategy, projection } from '../../src/api/api';
+import { Field } from '../../src/api/expression';
 import { JoinNode, NodeType, ProjectNode, ScanNode } from '../../src/engine/ast';
 import { IndexManager } from '../../src/engine/indexes/index-manager';
 import { Planner } from '../../src/engine/planner';
@@ -51,12 +52,15 @@ describe('Planner (merge join selection)', () => {
     const leftScan = join.left as ScanNode;
     const rightScan = join.right as ScanNode;
 
-    expect(leftScan.orderBy?.[0].field.source).toBe('u');
-    expect(leftScan.orderBy?.[0].field.path.join('.')).toBe('id');
+    const leftField = leftScan.orderBy?.[0].field as Field;
+    const rightField = rightScan.orderBy?.[0].field as Field;
+
+    expect(leftField.source).toBe('u');
+    expect(leftField.path.join('.')).toBe('id');
     expect(leftScan.orderBy?.[0].direction).toBe('asc');
 
-    expect(rightScan.orderBy?.[0].field.source).toBe('o');
-    expect(rightScan.orderBy?.[0].field.path.join('.')).toBe('userId');
+    expect(rightField.source).toBe('o');
+    expect(rightField.path.join('.')).toBe('userId');
     expect(rightScan.orderBy?.[0].direction).toBe('asc');
   });
 
@@ -98,19 +102,23 @@ describe('Planner (merge join selection)', () => {
     const uScan = firstJoin.left as ScanNode;
     const oScan = firstJoin.right as ScanNode;
 
-    expect(uScan.alias).toBe('u');
-    expect(uScan.orderBy?.[0].field.path.join('.')).toBe('id');
+    const uField = uScan.orderBy?.[0].field as Field;
+    const oField = oScan.orderBy?.[0].field as Field;
+
+    expect(uField.source).toBe('u');
+    expect(uField.path.join('.')).toBe('id');
     expect(uScan.orderBy?.[0].direction).toBe('asc');
 
-    expect(oScan.alias).toBe('o');
-    expect(oScan.orderBy?.[0].field.path.join('.')).toBe('userId');
+    expect(oField.source).toBe('o');
+    expect(oField.path.join('.')).toBe('userId');
     expect(oScan.orderBy?.[0].direction).toBe('asc');
 
     // Second join should have pushed ordering into the remaining scan, but not needed for the join output side.
     expect(topJoin.right.type).toBe(NodeType.SCAN);
     const pScan = topJoin.right as ScanNode;
-    expect(pScan.alias).toBe('p');
-    expect(pScan.orderBy?.[0].field.path.join('.')).toBe('userId');
+    const pField = pScan.orderBy?.[0].field as Field;
+    expect(pField.source).toBe('p');
+    expect(pField.path.join('.')).toBe('userId');
     expect(pScan.orderBy?.[0].direction).toBe('asc');
   });
 });

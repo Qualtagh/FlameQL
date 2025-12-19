@@ -53,7 +53,7 @@ describe('Planner', () => {
       id: 'sorted',
       from: { j: collection('jobs') },
       select: { id: field('j.#id') },
-      orderBy: ['j.title'],
+      orderBy: [field('j.title')],
       limit: 5,
       offset: 2,
     });
@@ -66,6 +66,9 @@ describe('Planner', () => {
     expect(limitNode.type).toBe(NodeType.LIMIT);
     expect(limitNode.limit).toBe(5);
     expect(limitNode.offset).toBe(2);
-    expect(limitNode.source.type).toBe(NodeType.SORT);
+    expect(limitNode.source.type).toBe(NodeType.SCAN);
+    const scan = limitNode.source as ScanNode;
+    expect(scan.orderBy).toBeDefined();
+    expect(scan.orderBy![0].field).toEqual(expect.objectContaining({ source: 'j', path: ['title'] }));
   });
 });

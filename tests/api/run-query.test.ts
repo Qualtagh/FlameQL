@@ -231,7 +231,7 @@ describe('runQuery API', () => {
       from: { u: collection('users') },
       select: { name: field('u.name') },
       where: like(field('u.name'), literal('B%')),
-      orderBy: ['u.name'],
+      orderBy: [field('u.name')],
       hints: { orderBy: OrderByStrategy.PostFetchSort },
     });
 

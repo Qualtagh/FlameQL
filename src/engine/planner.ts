@@ -6,7 +6,7 @@ import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
 import { pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
 import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
-import { simplifyPredicate, toDNF } from './utils/predicate-utils';
+import { orderBySpecsEqual, simplifyPredicate, toDNF } from './utils/predicate-utils';
 import { nextLexicographicString } from './utils/string-utils';
 
 export class Planner {
@@ -26,7 +26,7 @@ export class Planner {
       throw new Error('No sources defined in projection');
     }
 
-    const orderSpecs = this.parseOrderBy(projection.orderBy, new Set(aliases));
+    const orderSpecs = this.parseOrderBy(projection.orderBy ?? [], new Set(aliases));
     const wherePredicate = projection.where;
     const normalizedWhere = wherePredicate ? this.normalizePredicate(wherePredicate, new Set(aliases)) : undefined;
     const joinHint = projection.hints?.join ?? JoinStrategy.Auto;
@@ -38,7 +38,7 @@ export class Planner {
       : this.planBranch(aliases, sources, orderSpecs, undefined, joinHint);
 
     const withSortAndLimit = this.applySortAndLimit(base, orderSpecs, projection.limit, projection.offset);
-    const planned = this.applyProjection(withSortAndLimit, projection.select as Record<string, any> | undefined, aliases);
+    const planned = this.applyProjection(withSortAndLimit, projection.select, aliases);
     return planned;
   }
 
@@ -234,7 +234,7 @@ export class Planner {
       const source = sources[alias] as Collection;
       const { path, collectionGroup } = this.resolveCollectionPath(source);
       const pred = split.sourcePredicates[alias];
-      const { score } = this.planSingleScan(alias, path, collectionGroup, pred, orderSpecs.filter(o => o.field.source === alias));
+      const { score } = this.planSingleScan(alias, path, collectionGroup, pred, orderSpecs.filter(o => o.field.kind === 'Field' && o.field.source === alias));
       total += score;
     }
     return total;
@@ -324,7 +324,7 @@ export class Planner {
         path,
         collectionGroup,
         predicate,
-        orderBy.filter(o => o.field.source === alias)
+        orderBy.filter(o => o.field.kind === 'Field' && o.field.source === alias)
       );
       scans[alias] = node;
       costs[alias] = predicate ? score : Infinity;
@@ -341,7 +341,7 @@ export class Planner {
     orderBy: OrderBySpec[]
   ): { node: ExecutionNode; score: number } {
     if (!predicate) {
-      return { node: this.createScanNode(alias, path, collectionGroup, []), score: 1000 };
+      return { node: this.createScanNode(alias, path, collectionGroup, [], orderBy), score: 1000 };
     }
 
     const constraints: Constraint[] = [];
@@ -351,7 +351,7 @@ export class Planner {
     this.validateFirestoreGuardrails(constraints, orderBy);
     const score = this.scoreConstraints(path, constraints, orderBy) + totalNonIndexable * 100;
 
-    const base = this.createScanNode(alias, path, collectionGroup, constraints);
+    const base = this.createScanNode(alias, path, collectionGroup, constraints, orderBy);
     const node = totalNonIndexable > 0 ? this.wrapFilter(base, predicate) : base;
     return { node, score };
   }
@@ -372,6 +372,7 @@ export class Planner {
   private toSortOrder(orderBy?: OrderBySpec[]): SortOrder | undefined {
     if (!orderBy || orderBy.length === 0) return undefined;
     const primary = orderBy[0];
+    if (primary.field.kind !== 'Field') return undefined; // Cannot push down non-field sort
     return {
       field: primary.field.path.join('.'),
       direction: primary.direction,
@@ -499,9 +500,12 @@ export class Planner {
 
     if (inequalityFields.size === 1 && orderBy && orderBy.length > 0) {
       const inequalityField = Array.from(inequalityFields)[0];
-      const orderField = orderBy[0].field.path.join('.');
-      if (orderField !== inequalityField) {
-        throw new Error('When using an inequality filter, the first orderBy field must match the inequality field.');
+      const primary = orderBy[0];
+      if (primary.field.kind === 'Field') {
+        const orderField = primary.field.path.join('.');
+        if (orderField !== inequalityField) {
+          throw new Error('When using an inequality filter, the first orderBy field must match the inequality field.');
+        }
       }
     }
   }
@@ -677,10 +681,12 @@ export class Planner {
     // If the scan already has an orderBy and it doesn't match, don't silently override it.
     if (scan.orderBy && scan.orderBy.length > 0) {
       const primary = scan.orderBy[0];
-      const currentKey = `${scan.alias}.${primary.field.path.join('.')}`;
-      const expectedKey = `${field.source}.${field.path.join('.')}`;
-      if (currentKey === expectedKey && primary.direction === direction) {
-        return { ok: true };
+      if (primary.field.kind === 'Field') {
+        const currentKey = `${scan.alias}.${primary.field.path.join('.')}`;
+        const expectedKey = `${field.source}.${field.path.join('.')}`;
+        if (currentKey === expectedKey && primary.direction === direction) {
+          return { ok: true };
+        }
       }
       return { ok: false };
     }
@@ -741,6 +747,7 @@ export class Planner {
         const scan = node as ScanNode;
         const primary = scan.orderBy?.[0];
         if (!primary) return undefined;
+        if (primary.field.kind !== 'Field') return undefined;
         return {
           field: `${scan.alias}.${primary.field.path.join('.')}`,
           direction: primary.direction,
@@ -756,6 +763,7 @@ export class Planner {
         const sort = node as SortNode;
         const primary = sort.orderBy[0];
         if (!primary) return undefined;
+        if (primary.field.kind !== 'Field') return undefined;
         return {
           field: `${primary.field.source}.${primary.field.path.join('.')}`,
           direction: primary.direction,
@@ -827,12 +835,12 @@ export class Planner {
 
   private applyProjection(
     node: ExecutionNode,
-    select: Record<string, any> | undefined,
+    select: Record<string, Expression> | undefined,
     aliases: string[]
   ): ExecutionNode {
     if (!select) return node;
 
-    const fields: Record<string, any> = {};
+    const fields: Record<string, Expression> = {};
     const knownAliases = new Set(aliases);
 
     for (const [key, value] of Object.entries(select)) {
@@ -857,11 +865,21 @@ export class Planner {
     let current = node;
 
     if (orderSpecs.length > 0) {
-      current = {
-        type: NodeType.SORT,
-        source: current,
-        orderBy: orderSpecs,
-      } as SortNode;
+      let alreadySorted = false;
+      if (current.type === NodeType.SCAN) {
+        const scan = current as ScanNode;
+        if (orderBySpecsEqual(scan.orderBy, orderSpecs)) {
+          alreadySorted = true;
+        }
+      }
+
+      if (!alreadySorted) {
+        current = {
+          type: NodeType.SORT,
+          source: current,
+          orderBy: orderSpecs,
+        } as SortNode;
+      }
     }
 
     if (limit !== undefined || offset !== undefined) {
@@ -876,26 +894,26 @@ export class Planner {
     return current;
   }
 
-  private parseOrderBy(orderBy: any, aliases: Set<string>): OrderBySpec[] {
+  private parseOrderBy(orderBy: (Expression | OrderBySpec)[], aliases: Set<string>): OrderBySpec[] {
     const specs: OrderBySpec[] = [];
-    for (const entry of orderBy ?? []) {
-      if (typeof entry === 'string') {
+    for (const entry of orderBy) {
+      // If entry has a 'field' property that is an object (Expression), it's an OrderBySpec.
+      // Otherwise, we assume the entry itself is an Expression.
+      // Note: Expression has a 'kind' property. OrderBySpec has 'field' and 'direction'.
+
+      if ('field' in entry && entry.field && typeof entry.field === 'object') {
+        const spec = entry;
         specs.push({
-          field: this.parseField(entry, aliases),
+          field: this.normalizeExpression(spec.field, aliases),
+          direction: spec.direction ?? 'asc',
+        });
+      } else {
+        // It's an Expression
+        specs.push({
+          field: this.normalizeExpression(entry as Expression, aliases),
           direction: 'asc',
         });
-        continue;
       }
-
-      if (entry && typeof entry === 'object' && typeof entry.field === 'string') {
-        specs.push({
-          field: this.parseField(entry.field, aliases),
-          direction: entry.direction === 'desc' ? 'desc' : 'asc',
-        });
-        continue;
-      }
-
-      throw new Error('Invalid orderBy specification.');
     }
 
     return specs;
@@ -924,7 +942,8 @@ export class Planner {
     alias: string,
     path: string,
     collectionGroup: boolean | undefined,
-    constraints: Constraint[]
+    constraints: Constraint[],
+    orderBy?: OrderBySpec[]
   ): ScanNode {
     return {
       type: NodeType.SCAN,
@@ -932,6 +951,7 @@ export class Planner {
       collectionGroup,
       alias,
       constraints,
+      orderBy,
     };
   }
 
@@ -1025,11 +1045,12 @@ export class Planner {
     return this.normalizeExpression(expr, aliases);
   }
 
-  private normalizeExpression(expr: any, aliases: Set<string>): Expression {
-    if (expr instanceof Param || expr && typeof expr === 'object' && expr.kind === 'Param') {
+  private normalizeExpression(expr: ExpressionInput, aliases: Set<string>): Expression {
+    const kind: string = (expr as any).kind;
+    if (expr instanceof Param || expr && typeof expr === 'object' && kind === 'Param') {
       return expr as Param;  // Keep Param unresolved for executor
     }
-    if (expr instanceof FunctionExpression || expr && typeof expr === 'object' && expr.kind === 'FunctionExpression') {
+    if (expr instanceof FunctionExpression || expr && typeof expr === 'object' && kind === 'FunctionExpression') {
       const funcExpr = expr as FunctionExpression;
       const normalizedInput = this.normalizeExpressionInput(funcExpr.input, aliases);
       const foldedInput = this.tryFoldFunctionInput(normalizedInput);
@@ -1039,18 +1060,12 @@ export class Planner {
       }
       return new FunctionExpression(normalizedInput, funcExpr.fn);
     }
-    if (typeof expr === 'string') {
-      return this.parseField(expr, aliases);
-    }
-    if (expr instanceof Field || expr && typeof expr === 'object' && expr.kind === 'Field') {
+    if (expr instanceof Field || expr && typeof expr === 'object' && kind === 'Field') {
       this.assertAliasKnown(expr as Field, aliases);
       return expr as Field;
     }
-    if (expr instanceof Literal || expr && typeof expr === 'object' && expr.kind === 'Literal') {
+    if (expr instanceof Literal || expr && typeof expr === 'object' && kind === 'Literal') {
       return this.toLiteralValue(expr as Literal);
-    }
-    if (typeof expr === 'number' || typeof expr === 'boolean' || expr === null) {
-      return this.toLiteralValue(expr);
     }
     throw new Error('Unsupported expression in predicate. Use alias-qualified fields or parameters.');
   }
@@ -1073,18 +1088,6 @@ export class Planner {
     }
 
     return { foldable: false };
-  }
-
-  private parseField(path: string, aliases: Set<string>): Field {
-    const segments = path.split('.');
-    if (segments.length < 2) {
-      throw new Error(`Field reference "${path}" must include alias prefix.`);
-    }
-
-    const [alias, ...rest] = segments;
-    const ref = new Field(alias, rest);
-    this.assertAliasKnown(ref, aliases);
-    return ref;
   }
 
   private toLiteralValue(value: Literal | string | number | boolean | null): Literal {

@@ -28,7 +28,7 @@ describe('Planner guardrails', () => {
       id: 'ineq-order',
       from: { j: collection('jobs') },
       where: gt(field('j.age'), literal(10)),
-      orderBy: ['j.title'],
+      orderBy: [field('j.title')],
       select: { id: field('j.#id') },
     });
 
