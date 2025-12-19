@@ -45,9 +45,10 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     private leftSource: Operator,
     rightPlan: ExecutionNode,
     private joinNode: JoinNode,
+    private parameters: Record<string, any>,
     private indexManager?: IndexManager
   ) {
-    this.rightPrepared = new PreparedFirestoreScan(db, rightPlan);
+    this.rightPrepared = new PreparedFirestoreScan(db, rightPlan, parameters);
     const driver = pickIndexedNestedLoopLookupPlan(
       joinNode.condition,
       this.rightPrepared.plan.scan,
@@ -82,7 +83,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       if (this.currentLeftRow && this.currentMatchIdx < this.currentRightMatches.length) {
         const rightRow = this.currentRightMatches[this.currentMatchIdx++];
         const combinedRow = { ...this.currentLeftRow, ...rightRow };
-        if (evaluatePredicate(this.joinNode.condition, combinedRow)) {
+        if (evaluatePredicate(this.joinNode.condition, combinedRow, this.parameters)) {
           return combinedRow;
         }
         continue;
@@ -95,7 +96,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
 
       while (this.leftBatchIndex < this.leftBatch.length) {
         const leftRow = this.leftBatch[this.leftBatchIndex++];
-        const key = this.serializeKey(evaluate(this.driver.leftExpr, leftRow));
+        const key = this.serializeKey(evaluate(this.driver.leftExpr, leftRow, this.parameters));
         const matches = key ? this.rightMatchesByKey.get(key) ?? [] : [];
         if (matches.length === 0) continue;
 
@@ -118,7 +119,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       if (this.currentLeftRow && this.currentMatchIdx < this.currentRightMatches.length) {
         const rightRow = this.currentRightMatches[this.currentMatchIdx++];
         const combinedRow = { ...this.currentLeftRow, ...rightRow };
-        if (evaluatePredicate(this.joinNode.condition, combinedRow)) {
+        if (evaluatePredicate(this.joinNode.condition, combinedRow, this.parameters)) {
           return combinedRow;
         }
         continue;
@@ -128,7 +129,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       const leftRow = await this.leftSource.next();
       if (!leftRow) return null;
 
-      const leftVal = evaluate(this.driver.leftExpr, leftRow);
+      const leftVal = evaluate(this.driver.leftExpr, leftRow, this.parameters);
       const cacheKey = this.serializeKey(leftVal) ?? `null:${String(leftVal)}`;
 
       let rightRows = this.perRowCache.get(cacheKey);
@@ -166,7 +167,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
 
     // Start with a stashed row (if we had to stop early last time).
     if (this.pendingLeftRow) {
-      const v = evaluate(this.driver.leftExpr, this.pendingLeftRow);
+      const v = evaluate(this.driver.leftExpr, this.pendingLeftRow, this.parameters);
       pushLeftRow(this.pendingLeftRow, v);
       this.pendingLeftRow = null;
     }
@@ -176,7 +177,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       const row = await this.leftSource.next();
       if (!row) break;
 
-      const v = evaluate(this.driver.leftExpr, row);
+      const v = evaluate(this.driver.leftExpr, row, this.parameters);
       const key = this.serializeKey(v);
 
       // Null/undefined values can't be used reliably for index lookups; still keep the row (it will just produce no matches).

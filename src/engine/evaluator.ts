@@ -16,17 +16,20 @@ export function getValueFromField(row: any, ref: Field): any {
   return getValue(row[ref.source], ref.path);
 }
 
-export function evaluate(expr: Expression, row: any): any {
+export function evaluate(expr: Expression, row: any, parameters: Record<string, any>): any {
   switch (expr.kind) {
     case 'Field':
       return getValueFromField(row, expr);
     case 'Literal':
       return expr.value;
     case 'Param':
-      throw new Error('Param evaluation is not supported at runtime.');
+      if (!(expr.name in parameters)) {
+        throw new Error(`Parameter "${expr.name}" was not provided.`);
+      }
+      return parameters[expr.name];
     case 'FunctionExpression': {
       const funcExpr = expr as FunctionExpression;
-      const value = evaluateInput(funcExpr.input, row);
+      const value = evaluateInput(funcExpr.input, row, parameters);
       return funcExpr.fn(value);
     }
     default:
@@ -34,34 +37,34 @@ export function evaluate(expr: Expression, row: any): any {
   }
 }
 
-function evaluateInput(expr: ExpressionInput, row: any): any {
+function evaluateInput(expr: ExpressionInput, row: any, parameters: Record<string, any>): any {
   if (Array.isArray(expr)) {
-    return expr.map(item => evaluateInput(item, row));
+    return expr.map(item => evaluateInput(item, row, parameters));
   }
-  return evaluate(expr, row);
+  return evaluate(expr, row, parameters);
 }
 
-export function evaluatePredicate(predicate: Predicate, row: any): boolean {
+export function evaluatePredicate(predicate: Predicate, row: any, parameters: Record<string, any>): boolean {
   switch (predicate.type) {
     case 'COMPARISON': {
-      const left = evaluate(predicate.left, row);
+      const left = evaluate(predicate.left, row, parameters);
       const right = Array.isArray(predicate.right)
-        ? predicate.right.map(expr => evaluate(expr, row))
-        : evaluate(predicate.right, row);
+        ? predicate.right.map(expr => evaluate(expr, row, parameters))
+        : evaluate(predicate.right, row, parameters);
       const comparator = createOperationComparator(predicate.operation);
       return comparator(left, right);
     }
     case 'AND':
-      return predicate.conditions.every(cond => evaluatePredicate(cond, row));
+      return predicate.conditions.every(cond => evaluatePredicate(cond, row, parameters));
     case 'OR':
-      return predicate.conditions.some(cond => evaluatePredicate(cond, row));
+      return predicate.conditions.some(cond => evaluatePredicate(cond, row, parameters));
     case 'NOT':
-      return !evaluatePredicate(predicate.operand, row);
+      return !evaluatePredicate(predicate.operand, row, parameters);
     case 'CONSTANT':
       return predicate.value;
     case 'CUSTOM': {
       const custom = predicate;
-      const value = evaluateInput(custom.input as ExpressionInput, row);
+      const value = evaluateInput(custom.input as ExpressionInput, row, parameters);
       return custom.fn(value);
     }
     default:

@@ -1,5 +1,5 @@
 import { WhereFilterOp } from '@google-cloud/firestore';
-import { Expression, Field, JoinStrategy, Literal, OrderBySpec, Predicate } from '../api/expression';
+import { Expression, Field, JoinStrategy, OrderBySpec, Predicate } from '../api/expression';
 
 export enum NodeType {
   SCAN = 'SCAN',
@@ -19,7 +19,7 @@ export interface ExecutionNode {
 export interface Constraint {
   field: Field;
   op: WhereFilterOp;
-  value: Literal | Literal[];
+  value: Expression | Expression[];
 }
 
 export interface ScanNode extends ExecutionNode {

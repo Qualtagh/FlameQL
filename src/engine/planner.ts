@@ -12,17 +12,15 @@ import { nextLexicographicString } from './utils/string-utils';
 export class Planner {
   private indexManager: IndexManager;
   private predicateSplitter: PredicateSplitter;
-  private params?: Record<string, any>;
 
   constructor(indexManager: IndexManager = new IndexManager()) {
     this.indexManager = indexManager;
     this.predicateSplitter = new PredicateSplitter();
   }
 
-  plan(projection: Projection, parameters?: Record<string, any>): ExecutionNode {
+  plan(projection: Projection): ExecutionNode {
     const sources = projection.from || {};
     const aliases = Object.keys(sources);
-    this.params = parameters;
 
     if (aliases.length === 0) {
       throw new Error('No sources defined in projection');
@@ -41,7 +39,6 @@ export class Planner {
 
     const withSortAndLimit = this.applySortAndLimit(base, orderSpecs, projection.limit, projection.offset);
     const planned = this.applyProjection(withSortAndLimit, projection.select as Record<string, any> | undefined, aliases);
-    this.params = undefined;
     return planned;
   }
 
@@ -392,27 +389,21 @@ export class Planner {
     }
 
     if (predicate.type === 'COMPARISON') {
-      if (this.containsFunctionExpression(predicate.left) || this.containsFunctionExpression(predicate.right)) {
-        return nonIndexable + 1;
-      }
-
       const field = this.asField(predicate.left);
-      const literal = !Array.isArray(predicate.right) && predicate.right.kind === 'Literal'
-        ? predicate.right
-        : null;
-      const literalList = Array.isArray(predicate.right) && predicate.right.every(item => item.kind === 'Literal')
-        ? predicate.right
-        : null;
+      if (!field) return nonIndexable + 1;
 
-      if (field && (literal || literalList)) {
-        constraints.push({
-          field,
-          op: predicate.operation,
-          value: literal ?? literalList!,
-        });
-      } else {
-        nonIndexable += 1;
-      }
+      // We can push down if the left side is a simple Field and the right side
+      // (whether a single expression or a list) doesn't reference any other fields.
+      const rightIsEligible = Array.isArray(predicate.right)
+        ? predicate.right.every(expr => !this.containsField(expr))
+        : !this.containsField(predicate.right);
+
+      if (!rightIsEligible) return nonIndexable + 1;
+      constraints.push({
+        field,
+        op: predicate.operation,
+        value: predicate.right,
+      });
       return nonIndexable;
     }
 
@@ -423,11 +414,16 @@ export class Planner {
     return 0;
   }
 
-  private containsFunctionExpression(expr: any): boolean {
+  private containsField(expr: any): boolean {
     if (Array.isArray(expr)) {
-      return expr.some(item => this.containsFunctionExpression(item));
+      return expr.some(item => this.containsField(item));
     }
-    return !!expr && typeof expr === 'object' && expr.kind === 'FunctionExpression';
+    if (!expr || typeof expr !== 'object') return false;
+    if (expr.kind === 'Field') return true;
+    if (expr.kind === 'FunctionExpression') {
+      return this.containsField(expr.input);
+    }
+    return false;
   }
 
   /**
@@ -1031,7 +1027,7 @@ export class Planner {
 
   private normalizeExpression(expr: any, aliases: Set<string>): Expression {
     if (expr instanceof Param || expr && typeof expr === 'object' && expr.kind === 'Param') {
-      return this.resolveParam((expr as Param).name);
+      return expr as Param;  // Keep Param unresolved for executor
     }
     if (expr instanceof FunctionExpression || expr && typeof expr === 'object' && expr.kind === 'FunctionExpression') {
       const funcExpr = expr as FunctionExpression;
@@ -1077,17 +1073,6 @@ export class Planner {
     }
 
     return { foldable: false };
-  }
-
-  private resolveParam(name: string): Literal {
-    if (!this.params) {
-      throw new Error(`Missing parameters; value required for "${name}".`);
-    }
-    if (!(name in this.params)) {
-      throw new Error(`Parameter "${name}" was not provided.`);
-    }
-    const value = this.params[name];
-    return literal(value);
   }
 
   private parseField(path: string, aliases: Set<string>): Field {

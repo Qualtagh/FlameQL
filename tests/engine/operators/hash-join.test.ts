@@ -34,7 +34,7 @@ describe('HashJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(4);
     // u.id=1 (val='a') matches o.userId=1 (other='x', other='z') -> 2 rows
@@ -70,7 +70,7 @@ describe('HashJoinOperator', () => {
     joinNode.condition = arrayContains(field('p.tags'), field('s.tag'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(3);
     expect(results).toContainEqual({ pTags: ['a', 'b', 'c'], sTag: 'b' });
@@ -100,7 +100,7 @@ describe('HashJoinOperator', () => {
     joinNode.condition = arrayContainsAny(field('i.tags'), field('f.options'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ iTags: ['a', 'b'], fOptions: ['b', 'c'] });
@@ -128,7 +128,7 @@ describe('HashJoinOperator', () => {
     joinNode.condition = inList(field('t.tag'), field('f.options'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ tTag: 'b', fOptions: ['b', 'c'] });

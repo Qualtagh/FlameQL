@@ -33,7 +33,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = eq(field('u.#id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(3);
     expect(results).toContainEqual({ uVal: 'a', oOther: 'x' });
@@ -63,7 +63,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = gt(field('s.val'), field('t.limit'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // 20 > 15
     // 30 > 15
@@ -95,7 +95,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = arrayContains(field('p.tags'), field('s.tag'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results).toContainEqual({ pTags: ['a', 'b', 'c'], sTag: 'b' });
@@ -127,7 +127,7 @@ describe('NestedLoopJoinOperator', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ iTags: ['a', 'b'], fOptions: ['b', 'c'] });
@@ -159,7 +159,7 @@ describe('NestedLoopJoinOperator', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(2);
     expect(results).toContainEqual({ tStatus: 'active', rAllowed: ['active', 'pending'] });
@@ -187,7 +187,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = eq(field('p.price.currency'), field('r.code'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toStrictEqual([{
       pPrice: { value: 20, currency: 'USD' },
@@ -232,7 +232,7 @@ describe('NestedLoopJoinOperator', () => {
     ]);
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ uId: 4, lAction: 'login' });

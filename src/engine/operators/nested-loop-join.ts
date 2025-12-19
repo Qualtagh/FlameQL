@@ -20,7 +20,8 @@ export class NestedLoopJoinOperator implements Operator {
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
-    private node: JoinNode
+    private node: JoinNode,
+    private parameters: Record<string, any>
   ) { }
 
   async next(): Promise<any | null> {
@@ -44,7 +45,7 @@ export class NestedLoopJoinOperator implements Operator {
         const rightRow = this.rightBuffer[this.rightIndex++];
 
         const combinedRow = { ...this.currentLeftRow, ...rightRow };
-        if (evaluatePredicate(this.node.condition, combinedRow)) {
+        if (evaluatePredicate(this.node.condition, combinedRow, this.parameters)) {
           return combinedRow;
         }
       }

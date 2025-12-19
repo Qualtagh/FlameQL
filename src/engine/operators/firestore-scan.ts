@@ -1,6 +1,5 @@
 import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
-import { IndexManager } from '../indexes/index-manager';
 import { Operator, SortOrder } from './operator';
 import { PreparedFirestoreCursor, PreparedFirestoreScan } from './prepared-firestore-scan';
 
@@ -11,7 +10,7 @@ export class FirestoreScan implements Operator {
   constructor(
     private db: admin.firestore.Firestore,
     private node: ScanNode,
-    private indexManager?: IndexManager
+    private parameters: Record<string, any>
   ) { }
 
   async next(): Promise<any | null> {
@@ -26,7 +25,7 @@ export class FirestoreScan implements Operator {
         };
       }
 
-      const prepared = new PreparedFirestoreScan(this.db, this.node);
+      const prepared = new PreparedFirestoreScan(this.db, this.node, this.parameters);
       this.cursor = prepared.createCursor({
         includeBaseWhere: true,
         includeScanOrderBy: true,

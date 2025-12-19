@@ -43,7 +43,7 @@ export async function runQuery(
   const db = options.db ?? FlameConfig.db;
   const indexManager = FlameConfig.indexManager ?? new IndexManager();
   const planner = new Planner(indexManager);
-  const plan = planner.plan(projection, options.parameters);
+  const plan = planner.plan(projection);
   const executor = new Executor(db, indexManager);
-  return executor.execute(plan);
+  return executor.execute(plan, options.parameters ?? {});
 }

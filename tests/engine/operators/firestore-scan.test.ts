@@ -19,7 +19,7 @@ describe('FirestoreScan with metadata', () => {
       constraints: [],
     } as ScanNode;
 
-    const scan = new FirestoreScan(db, scanNode);
+    const scan = new FirestoreScan(db, scanNode, {});
     const result = await scan.next();
 
     expect(result).toBeDefined();
@@ -43,7 +43,7 @@ describe('FirestoreScan with metadata', () => {
       constraints: [],
     } as ScanNode;
 
-    const scan = new FirestoreScan(db, scanNode);
+    const scan = new FirestoreScan(db, scanNode, {});
     const result = await scan.next();
 
     expect(result).toBeDefined();

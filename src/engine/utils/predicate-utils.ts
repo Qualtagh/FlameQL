@@ -1187,6 +1187,20 @@ function isNegationOf(a: Predicate, b: Predicate): boolean {
   if (b.type === 'NOT') {
     return predicatesEqual(b.operand, a);
   }
+
+  // Check for comparison-level contradictions: (== X) vs (!= X) where X is the same expression
+  // This applies when X is a Param (or Literal) - both should be detected as contradictions
+  if (a.type === 'COMPARISON' && b.type === 'COMPARISON') {
+    // Check if same left operand and same right operand
+    if (expressionsEqual(a.left, b.left) && expressionsOrListEqual(a.right, b.right)) {
+      // == vs != are contradictions
+      if (a.operation === '==' && b.operation === '!=' ||
+        a.operation === '!=' && b.operation === '==') {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 

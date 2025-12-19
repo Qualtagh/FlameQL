@@ -40,7 +40,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.DocPath,
       };
 
-      const results = await executor.execute(unionPlan);
+      const results = await executor.execute(unionPlan, {});
 
       // 4 unique users (deduplicated by DOC_PATH)
       expect(results.length).toBe(4);
@@ -81,7 +81,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.DocPath,
       };
 
-      const results = await executor.execute(unionPlan);
+      const results = await executor.execute(unionPlan, {});
 
       // Expected join cardinality:
       // user1 joins o1, o2 (2 rows); user2 joins o3 (1 row) => 3 rows total
@@ -114,7 +114,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.HashMap,
       };
 
-      const results = await executor.execute(unionPlan);
+      const results = await executor.execute(unionPlan, {});
 
       // 8 results because different aliases make rows structurally different
       // (u1: {...} vs u2: {...})
@@ -143,7 +143,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.HashMap,
       };
 
-      const results = await executor.execute(unionPlan);
+      const results = await executor.execute(unionPlan, {});
 
       // 4 unique rows (same alias, same data = same content hash)
       expect(results.length).toBe(4);
@@ -172,7 +172,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.None,
       };
 
-      const results = await executor.execute(unionPlan);
+      const results = await executor.execute(unionPlan, {});
 
       // 8 total (4 + 4, no deduplication)
       expect(results.length).toBe(8);

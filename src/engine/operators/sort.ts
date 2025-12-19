@@ -1,5 +1,5 @@
 import { SortNode } from '../ast';
-import { getValueFromField } from '../evaluator';
+import { evaluate } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
 export class Sort implements Operator {
@@ -8,7 +8,8 @@ export class Sort implements Operator {
 
   constructor(
     private source: Operator,
-    private node: SortNode
+    private node: SortNode,
+    private parameters: Record<string, any>
   ) { }
 
   async next(): Promise<any | null> {
@@ -37,19 +38,19 @@ export class Sort implements Operator {
     }
 
     const comparators = this.node.orderBy.map(spec => ({
-      ref: spec.field,
+      expression: spec.field,
       dir: spec.direction === 'desc' ? -1 : 1,
     }));
 
     this.buffer.sort((a, b) => {
       for (const cmp of comparators) {
-        const left = getValueFromField(a, cmp.ref);
-        const right = getValueFromField(b, cmp.ref);
+        const left = evaluate(cmp.expression, a, this.parameters);
+        const right = evaluate(cmp.expression, b, this.parameters);
         if (left === right) continue;
-        if (left === undefined || left === null) return -1 * cmp.dir;
-        if (right === undefined || right === null) return 1 * cmp.dir;
-        if (left < right) return -1 * cmp.dir;
-        if (left > right) return 1 * cmp.dir;
+        if (left === undefined || left === null) return -cmp.dir;
+        if (right === undefined || right === null) return cmp.dir;
+        if (left < right) return -cmp.dir;
+        if (left > right) return cmp.dir;
       }
       return 0;
     });

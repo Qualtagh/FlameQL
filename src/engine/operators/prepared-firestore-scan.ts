@@ -1,8 +1,8 @@
 import * as admin from 'firebase-admin';
 import { and, constant } from '../../api/api';
-import { Predicate } from '../../api/expression';
+import { Expression, Predicate } from '../../api/expression';
 import { Constraint, ExecutionNode, FilterNode, NodeType, ScanNode } from '../ast';
-import { evaluatePredicate } from '../evaluator';
+import { evaluate, evaluatePredicate } from '../evaluator';
 import { buildFirestoreQuery, docToAliasedRow, FirestoreOrderBy, FirestoreWhereConstraint } from '../utils/firestore-utils';
 
 export interface PreparedFirestoreScanPlan {
@@ -13,9 +13,9 @@ export interface PreparedFirestoreScanPlan {
    */
   postFilter: Predicate;
   /**
-   * The ScanNode constraints compiled to Firestore-level field paths + raw values.
+   * Raw ScanNode constraints to be compiled with parameters at execution time.
    */
-  baseWhere: FirestoreWhereConstraint[];
+  baseConstraints: Constraint[];
 }
 
 export interface PreparedFirestoreCursorOptions {
@@ -34,7 +34,8 @@ export class PreparedFirestoreCursor {
 
   constructor(
     private plan: PreparedFirestoreScanPlan,
-    query: admin.firestore.Query
+    query: admin.firestore.Query,
+    private parameters: Record<string, any>
   ) {
     const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
     this.iterator = stream[Symbol.asyncIterator]();
@@ -51,7 +52,7 @@ export class PreparedFirestoreCursor {
       }
 
       const row = docToAliasedRow(this.plan.scan.alias, value);
-      if (!evaluatePredicate(this.plan.postFilter, row)) {
+      if (!evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
         continue;
       }
 
@@ -65,7 +66,8 @@ export class PreparedFirestoreScan {
 
   constructor(
     private db: admin.firestore.Firestore,
-    node: ExecutionNode
+    node: ExecutionNode,
+    private parameters: Record<string, any>
   ) {
     this.plan = prepareFirestoreScanPlan(node);
   }
@@ -82,8 +84,9 @@ export class PreparedFirestoreScan {
     } = opts ?? {};
 
     const scan = this.plan.scan;
+    const baseWhere = compileConstraints(this.plan.baseConstraints, this.parameters);
     const combinedWhere = [
-      ...includeBaseWhere ? this.plan.baseWhere : [],
+      ...includeBaseWhere ? baseWhere : [],
       ...extraWhere,
     ];
 
@@ -116,7 +119,7 @@ export class PreparedFirestoreScan {
       limit: resolvedLimit,
     });
 
-    return new PreparedFirestoreCursor(this.plan, query);
+    return new PreparedFirestoreCursor(this.plan, query, this.parameters);
   }
 }
 
@@ -126,7 +129,7 @@ export function prepareFirestoreScanPlan(node: ExecutionNode): PreparedFirestore
     return {
       scan,
       postFilter: predicateFromConstraints(scan.constraints),
-      baseWhere: compileConstraints(scan.constraints),
+      baseConstraints: scan.constraints,
     };
   }
 
@@ -139,18 +142,19 @@ export function prepareFirestoreScanPlan(node: ExecutionNode): PreparedFirestore
     return {
       scan,
       postFilter: filter.predicate,
-      baseWhere: compileConstraints(scan.constraints),
+      baseConstraints: scan.constraints,
     };
   }
 
   throw new Error('PreparedFirestoreScan currently supports SCAN or FILTER->SCAN only.');
 }
 
-function compileConstraints(constraints: Constraint[]): FirestoreWhereConstraint[] {
+function compileConstraints(constraints: Constraint[], parameters: Record<string, any>): FirestoreWhereConstraint[] {
+  const resolveValue = (v: Expression) => evaluate(v, {}, parameters);
   return constraints.map(c => ({
     fieldPath: c.field.path.join('.'),
     op: c.op,
-    value: Array.isArray(c.value) ? c.value.map(v => v.value) : c.value.value,
+    value: Array.isArray(c.value) ? c.value.map(resolveValue) : resolveValue(c.value),
   }));
 }
 

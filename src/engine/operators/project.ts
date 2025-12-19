@@ -5,7 +5,8 @@ import { Operator, SortOrder } from './operator';
 export class Project implements Operator {
   constructor(
     private source: Operator,
-    private node: ProjectNode
+    private node: ProjectNode,
+    private parameters: Record<string, any>
   ) { }
 
   async next(): Promise<any | null> {
@@ -14,7 +15,7 @@ export class Project implements Operator {
 
     const result: any = {};
     for (const [key, expr] of Object.entries(this.node.fields)) {
-      result[key] = evaluate(expr, row);
+      result[key] = evaluate(expr, row, this.parameters);
     }
     return result;
   }

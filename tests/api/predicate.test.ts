@@ -19,10 +19,10 @@ describe('like and custom predicates', () => {
       const pred = compare([field('u.name'), literal('Alice')], ([name, expected]) => name === expected);
       const row = { u: { name: 'Alice' } };
 
-      expect(evaluatePredicate(pred, row)).toBe(true);
+      expect(evaluatePredicate(pred, row, {})).toBe(true);
 
       const row2 = { u: { name: 'Bob' } };
-      expect(evaluatePredicate(pred, row2)).toBe(false);
+      expect(evaluatePredicate(pred, row2, {})).toBe(false);
     });
   });
 
@@ -30,50 +30,50 @@ describe('like and custom predicates', () => {
     it('matches exact strings', () => {
       const pred = like(field('u.name'), literal('Alice'));
       const row = { u: { name: 'Alice' } };
-      expect(evaluatePredicate(pred, row)).toBe(true);
+      expect(evaluatePredicate(pred, row, {})).toBe(true);
 
       const row2 = { u: { name: 'Bob' } };
-      expect(evaluatePredicate(pred, row2)).toBe(false);
+      expect(evaluatePredicate(pred, row2, {})).toBe(false);
     });
 
     it('matches prefix patterns with %', () => {
       const pred = like(field('u.name'), literal('Ali%'));
-      expect(evaluatePredicate(pred, { u: { name: 'Alice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Alison' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Bob' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Alison' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Bob' } }, {})).toBe(false);
     });
 
     it('matches suffix patterns', () => {
       const pred = like(field('u.name'), literal('%ice'));
-      expect(evaluatePredicate(pred, { u: { name: 'Alice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'ice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Bob' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'ice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Bob' } }, {})).toBe(false);
     });
 
     it('matches contains patterns', () => {
       const pred = like(field('u.name'), literal('%li%'));
-      expect(evaluatePredicate(pred, { u: { name: 'Alice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Olivia' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Bob' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Olivia' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Bob' } }, {})).toBe(false);
     });
 
     it('matches single character wildcards with _', () => {
       const pred = like(field('u.name'), literal('A_i%'));
-      expect(evaluatePredicate(pred, { u: { name: 'Alice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'A1ice' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'A12ice' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'A1ice' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'A12ice' } }, {})).toBe(false);
     });
 
     it('handles empty patterns', () => {
       const pred = like(field('u.name'), literal(''));
-      expect(evaluatePredicate(pred, { u: { name: '' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'Alice' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: '' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice' } }, {})).toBe(false);
     });
 
     it('escapes special regex characters', () => {
       const pred = like(field('u.name'), literal('Alice.+'));
-      expect(evaluatePredicate(pred, { u: { name: 'Alice.+' } })).toBe(true);
-      expect(evaluatePredicate(pred, { u: { name: 'AliceX+' } })).toBe(false);
+      expect(evaluatePredicate(pred, { u: { name: 'Alice.+' } }, {})).toBe(true);
+      expect(evaluatePredicate(pred, { u: { name: 'AliceX+' } }, {})).toBe(false);
     });
 
     it('routes LIKE predicates to residual filters', () => {
@@ -151,7 +151,7 @@ describe('like and custom predicates', () => {
     it('handles unicode characters in bounds calculation', () => {
       const pred = like(field('u.name'), literal('Zürich%'));
       const row = { u: { name: 'Zürich Hauptbahnhof' } };
-      expect(evaluatePredicate(pred, row)).toBe(true);
+      expect(evaluatePredicate(pred, row, {})).toBe(true);
     });
 
     it('prevents infinite loops by marking optimized predicates', () => {

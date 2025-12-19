@@ -22,7 +22,7 @@ describe('Executor', () => {
     const planner = new Planner();
     const plan = planner.plan(p);
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toStrictEqual([
       { id: 'job1', title: 'Software Engineer' },
@@ -48,7 +48,7 @@ describe('Executor', () => {
     const planner = new Planner();
     const plan = planner.plan(p);
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toStrictEqual([
       { price: 100, tags: ['sale', 'new'] },
@@ -70,7 +70,7 @@ describe('Executor', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results.length).toBe(1);
     expect(results[0].count).toBe(2);
@@ -96,7 +96,7 @@ describe('Executor', () => {
     joinNode.condition = eq(field('j.#id'), field('s.jobId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toStrictEqual([
       { jobId: 'job1', jobTitle: 'Software Engineer', shiftDate: '2023-01-01' },

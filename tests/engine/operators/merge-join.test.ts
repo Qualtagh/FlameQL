@@ -35,7 +35,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(4);
     // u.id=1 (val='a') matches o.userId=1 (other='x', other='z') -> 2 rows
@@ -67,7 +67,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(0);
   });
@@ -91,7 +91,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(0);
   });
@@ -118,7 +118,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(0);
   });
@@ -145,7 +145,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ uVal: 'a', oOther: 'x' });
@@ -173,7 +173,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = eq(field('p.code'), field('i.productCode'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ pName: 'Widget', iQty: 10 });
@@ -195,7 +195,7 @@ describe('MergeJoinOperator', () => {
 
     const executor = new Executor(db);
 
-    await expect(executor.execute(plan)).rejects.toThrow(
+    await expect(executor.execute(plan, {})).rejects.toThrow(
       'MergeJoin strategy requires comparison operation'
     );
   });
@@ -224,7 +224,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = lt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // u.id=1 < o.userId in [2,4,6] -> 3 matches
     // u.id=3 < o.userId in [4,6] -> 2 matches
@@ -261,7 +261,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = lte(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // u.id=2 <= o.userId in [2,3,4] -> 3 matches
     // u.id=4 <= o.userId in [4] -> 1 match
@@ -296,7 +296,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // u.id=3 > o.userId in [2] -> 1 match
     // u.id=5 > o.userId in [2,4] -> 2 matches
@@ -333,7 +333,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = gte(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // u.id=3 >= o.userId in [1,3] -> 2 matches
     // u.id=5 >= o.userId in [1,3,5] -> 3 matches
@@ -367,7 +367,7 @@ describe('MergeJoinOperator', () => {
     joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan);
+    const results = await executor.execute(plan, {});
 
     // Both u.id=3 rows match both o.userId=2 rows (3 > 2)
     // 2 left rows × 2 right rows = 4 results

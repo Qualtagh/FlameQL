@@ -49,7 +49,7 @@ describe('apply expression', () => {
   it('evaluates function expressions at runtime for non-literals', () => {
     const expr = apply(field('u.name'), (s: string) => s.toLowerCase());
     const row = { u: { name: 'MixedCase' } };
-    const result = evaluate(expr, row);
+    const result = evaluate(expr, row, {});
     expect(result).toBe('mixedcase');
   });
 
@@ -59,7 +59,7 @@ describe('apply expression', () => {
       ([userParts, orderParts]) => (userParts as any[]).join('') + (orderParts as any[]).join('')
     );
     const row = { u: { userId: 'abc', orderId: 'def' } };
-    const result = evaluate(expr, row);
+    const result = evaluate(expr, row, {});
     expect(result).toBe('/users/abc/orders/def');
   });
 
@@ -89,19 +89,19 @@ describe('convenience functions', () => {
   describe('string functions', () => {
     it('concatenates strings', () => {
       const expr = concatenate([literal('hello'), literal(' '), literal('world')]);
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe('hello world');
     });
 
     it('converts to lowercase', () => {
       const expr = lowercase(literal('HELLO WORLD'));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe('hello world');
     });
 
     it('converts to uppercase', () => {
       const expr = uppercase(literal('hello world'));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe('HELLO WORLD');
     });
 
@@ -132,25 +132,25 @@ describe('convenience functions', () => {
   describe('math functions', () => {
     it('adds numbers', () => {
       const expr = add(literal(5), literal(3));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe(8);
     });
 
     it('subtracts numbers', () => {
       const expr = subtract(literal(10), literal(4));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe(6);
     });
 
     it('multiplies numbers', () => {
       const expr = multiply(literal(6), literal(7));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe(42);
     });
 
     it('divides numbers', () => {
       const expr = divide(literal(15), literal(3));
-      const result = evaluate(expr, {});
+      const result = evaluate(expr, {}, {});
       expect(result).toBe(5);
     });
 
@@ -184,7 +184,7 @@ describe('convenience functions', () => {
     it('evaluates math functions with fields at runtime', () => {
       const expr = add(field('u.score'), literal(10));
       const row = { u: { score: 15 } };
-      const result = evaluate(expr, row);
+      const result = evaluate(expr, row, {});
       expect(result).toBe(25);
     });
   });
