@@ -1,7 +1,8 @@
-import { and, apply, arrayContains, arrayContainsAny, collection, eq, field, inList, like, literal, notInList, OrderByStrategy, param, projection, runQueryAll } from '../../src/api/api';
+import { and, apply, arrayContains, arrayContainsAny, collection, eq, field, inList, like, literal, notInList, OrderByStrategy, param, projection } from '../../src/api/api';
+import { runQueryTest } from '../helpers/test-utils';
 import { clearDatabase, db } from '../setup';
 
-describe('runQueryAll API', () => {
+describe('runQueryTest API', () => {
   beforeEach(async () => {
     await clearDatabase();
   });
@@ -18,7 +19,7 @@ describe('runQueryAll API', () => {
       select: { userName: field('u.name'), userRole: field('u.role') },
     });
 
-    const results = await runQueryAll(p, { db });
+    const results = await runQueryTest(p, { db });
 
     expect(results).toHaveLength(3);
     expect(results).toContainEqual({ userName: 'Alice', userRole: 'admin' });
@@ -46,7 +47,7 @@ describe('runQueryAll API', () => {
     });
 
     // Default join condition is id == id, which will match some rows
-    const results = await runQueryAll(p, { db });
+    const results = await runQueryTest(p, { db });
 
     // Without proper join condition, this will do a cartesian product
     // But we're testing that the API works end-to-end
@@ -78,7 +79,7 @@ describe('runQueryAll API', () => {
       },
     });
 
-    const results = await runQueryAll(p, { db });
+    const results = await runQueryTest(p, { db });
 
     expect(results).toHaveLength(2);
     expect(results).toContainEqual({
@@ -104,10 +105,10 @@ describe('runQueryAll API', () => {
       where: eq(field('u.id'), param('userId')),
     });
 
-    const results = await runQueryAll(p, { db, parameters: { userId: 'u1' } });
+    const results = await runQueryTest(p, { db, parameters: { userId: 'u1' } });
     expect(results).toEqual([{ userName: 'Alice' }]);
 
-    await expect(runQueryAll(p, { db, parameters: {} })).rejects.toThrow('Parameter "userId" was not provided.');
+    await expect(runQueryTest(p, { db, parameters: {} })).rejects.toThrow('Parameter "userId" was not provided.');
   });
 
   it('supports inList (basic)', async () => {
@@ -124,7 +125,7 @@ describe('runQueryAll API', () => {
       where: inList(field('u.userId'), [literal(1), param('allowedUserId'), literal(2)]),
     });
 
-    const results = await runQueryAll(p, { db, parameters: { allowedUserId: 4 } });
+    const results = await runQueryTest(p, { db, parameters: { allowedUserId: 4 } });
 
     const userIds = results.map(r => r.userId).sort();
     expect(userIds).toEqual([1, 2]);
@@ -145,7 +146,7 @@ describe('runQueryAll API', () => {
       where: inList(field('u.userId'), [literal(1), param('allowedUserId'), field('c.userId')]),
     });
 
-    const results = await runQueryAll(p, { db, parameters: { allowedUserId: 4 } });
+    const results = await runQueryTest(p, { db, parameters: { allowedUserId: 4 } });
 
     const userIds = results.map(r => r.userId).sort();
     expect(userIds).toEqual([1, 2]);
@@ -167,7 +168,7 @@ describe('runQueryAll API', () => {
       ]),
     });
 
-    const listResults = await runQueryAll(listPredicate, { db });
+    const listResults = await runQueryTest(listPredicate, { db });
     expect(listResults).toEqual([{ color: 'blue' }]);
 
     const arrayContainsPredicate = projection({
@@ -177,7 +178,7 @@ describe('runQueryAll API', () => {
       where: arrayContains(field('p.tags'), literal('warm')),
     });
 
-    const warmResults = await runQueryAll(arrayContainsPredicate, { db });
+    const warmResults = await runQueryTest(arrayContainsPredicate, { db });
     expect(warmResults.map(r => r.color).sort()).toEqual(['red']);
   });
 
@@ -196,7 +197,7 @@ describe('runQueryAll API', () => {
       },
     });
 
-    const results = await runQueryAll(p, { db });
+    const results = await runQueryTest(p, { db });
     expect(results).toEqual([{ path: '/users/user-1/jobs', shout: 'Engineer !' }]);
   });
 
@@ -217,7 +218,7 @@ describe('runQueryAll API', () => {
       select: { userId: field('o.userId'), status: field('o.status') },
     });
 
-    const results = await runQueryAll(p, { db });
+    const results = await runQueryTest(p, { db });
     expect(results).toEqual([{ userId: 'u1', status: 'open' }]);
   });
 
@@ -235,7 +236,7 @@ describe('runQueryAll API', () => {
       hints: { orderBy: OrderByStrategy.PostFetchSort },
     });
 
-    const listResults = await runQueryAll(listPredicate, { db });
+    const listResults = await runQueryTest(listPredicate, { db });
     expect(listResults).toEqual([{ name: 'Beatrice' }, { name: 'Bob' }]);
   });
 });

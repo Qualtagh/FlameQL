@@ -128,21 +128,15 @@ export function compare(
 }
 
 export function like(left: Expression, pattern: Expression): CustomPredicate {
-  const cache: { pattern?: string, regex?: RegExp } = {};
   return compare(
     [left, pattern],
     ([value, pat]) => {
       // Convert SQL LIKE pattern to regex
       // % -> .*, _ -> .
       // Escape special regex characters first
-      if (cache.pattern === pat) {
-        return cache.regex!.test(value);
-      }
       const escaped = pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = escaped.replace(/%/g, '.*').replace(/_/g, '.');
-      cache.regex = new RegExp(`^${regex}$`);
-      cache.pattern = pat;
-      return cache.regex.test(value);
+      return new RegExp(`^${regex}$`).test(value);
     },
     { name: 'like' }
   );

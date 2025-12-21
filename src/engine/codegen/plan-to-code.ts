@@ -6,6 +6,7 @@ import { generateExpressionCode, generateExpressionSelector, generatePredicateCo
 export interface CodeGenOptions {
   functionName?: string;
   includeImports?: boolean;
+  includeSignature?: boolean;
 }
 
 export function planToCode(
@@ -13,7 +14,11 @@ export function planToCode(
   projectionId: string = 'execute_query',
   options: CodeGenOptions = {}
 ): string {
-  const { functionName = toCamelCase(projectionId), includeImports = true } = options;
+  const {
+    functionName = toCamelCase(projectionId),
+    includeImports = true,
+    includeSignature = true,
+  } = options;
   const ctx = new CodeGenContext();
   const rootGenerator = ctx.generateNode(plan);
   let code = '';
@@ -25,25 +30,30 @@ export function planToCode(
     `;
   }
 
-  code += align`
+  if (includeSignature) {
+    code += align`
     export async function ${functionName}(
       db: Firestore,
       params: Record<string, any>
     ): Promise<any[]> {
   `;
+  }
 
   const definitions = ctx.getDefinitions();
   if (definitions) code += `${definitions}\n`;
 
-  code += align`
-      // Collect results
-      const results: any[] = [];
-      for await (const row of ${rootGenerator}()) {
-        results.push(row);
-      }
-      return results;
+  code += indent(align`
+    // Collect results
+    const results: any[] = [];
+    for await (const row of ${rootGenerator}()) {
+      results.push(row);
     }
-  `;
+    return results;
+  `, 2);
+
+  if (includeSignature) {
+    code += '}\n';
+  }
 
   return code;
 }
@@ -96,7 +106,9 @@ class CodeGenContext {
     const constraints = (node.constraints ?? [])
       .map(c => {
         const fieldPath = c.field.path.join('.');
-        const valueCode = generateExpressionCode(c.value as any);
+        const valueCode = Array.isArray(c.value)
+          ? `[${c.value.map(v => generateExpressionCode(v)).join(', ')}]`
+          : generateExpressionCode(c.value as any);
         return `query = query.where('${fieldPath}', '${c.op}', ${valueCode});`;
       })
       .join('\n');

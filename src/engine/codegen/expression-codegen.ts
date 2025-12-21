@@ -104,20 +104,9 @@ export function generatePredicateCode(predicate: Predicate): string {
       return generateComparisonCode(left, predicate.operation, right);
 
     case 'CUSTOM':
-      // Fallback to runtime evaluation
-      // We need to ensure the custom predicate object is serialized correctly,
-      // including any metadata.
-      // However, the 'fn' property is a function and won't serialize via JSON.stringify.
-      // The current system might not support serializing arbitrary custom predicate functions to code
-      // unless they are standard ones (like 'like').
-      // For now, we generate code that calls evaluatePredicate with the serialized predicate object.
-      // NOTE: This assumes the runtime environment has access to the SAME custom predicate definitions
-      // or that we can somehow serialize them.
-      // Since we can't easily serialize functions, this is a limitation.
-      // For standard 'like' optimization which is transformed into AND/OR/CMP, it's fine.
-      // But if it remains CUSTOM, we might have issues.
-      // We will assume the 'evaluatePredicate' helper can handle it or the user accepts this limitation for now.
-      return `evaluatePredicate(${JSON.stringify(predicate)}, row, params)`;
+      const fnSource = predicate.fn.toString();
+      const inputCode = emitExpressionInput(predicate.input as ExpressionInput);
+      return `(${fnSource})(${inputCode})`;
 
     default:
       throw new Error(`Unknown predicate type: ${(predicate as any).type}`);
