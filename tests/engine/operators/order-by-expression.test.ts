@@ -35,13 +35,13 @@ describe('generic orderBy', () => {
     const executor = new Executor(db);
 
     // Test direction = 1 (ASC: 5, 10, 20)
-    const res1 = await executor.execute(plan, { direction: 1 });
+    const res1 = await executor.executeAll(plan, { direction: 1 });
     expect(res1.map(r => r.price)).toEqual([5, 10, 20]);
 
     // Test direction = -1 (DESC: 20, 10, 5)
     // Note: We need to recreate executor or just rerun execute?
     // Plan is reusable.
-    const res2 = await executor.execute(plan, { direction: -1 });
+    const res2 = await executor.executeAll(plan, { direction: -1 });
     expect(res2.map(r => r.price)).toEqual([20, 10, 5]);
   });
 
@@ -68,7 +68,7 @@ describe('generic orderBy', () => {
     expect(scan.orderBy?.[0].direction).toBe('desc');
     const executor = new Executor(db);
 
-    const res = await executor.execute(plan, {});
+    const res = await executor.executeAll(plan, {});
     expect(res.map(r => r.price)).toEqual([20, 10, 5]);
   });
 });

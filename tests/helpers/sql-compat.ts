@@ -1,8 +1,8 @@
-import { runQuery } from '../../src/api/api';
+import { runQueryAll } from '../../src/api/api';
+import { db as firestoreDb } from '../setup';
+import { seedFirestore } from './firestore-seed';
 import { TranslationResult, normalizeFlameRow, normalizeSqlRow, translateSqlToFlame } from './sql-to-flameql';
 import { applyFixture, createDatabase, getSchemaMap, queryRaw, readAllTables } from './sqlite-runner';
-import { seedFirestore } from './firestore-seed';
-import { db as firestoreDb } from '../setup';
 
 export interface SqlCase {
   name: string;
@@ -30,7 +30,7 @@ export async function runSqlCompatCase(testCase: SqlCase): Promise<CompatResult>
   const sqlResult = queryRaw(sqlite, testCase.query);
   const sqlRows = sqlResult.rows.map(row => normalizeSqlRow(row, translation.select));
 
-  const flameRaw = await runQuery(translation.projection, { db: firestoreDb });
+  const flameRaw = await runQueryAll(translation.projection, { db: firestoreDb });
   const flameRows = flameRaw.map(row => normalizeFlameRow(row, translation.select));
 
   const normalizeList = (rows: Record<string, any>[]) =>

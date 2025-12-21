@@ -8,5 +8,5 @@ export { literal } from './literal';
 export { param } from './param';
 export { and, arrayContains, arrayContainsAny, compare, constant, eq, gt, gte, inList, like, lt, lte, ne, not, notInList, or } from './predicate';
 export { projection } from './projection';
-export { runQuery } from './run-query';
+export { runQuery, runQueryAll } from './run-query';
 export type { RunQueryOptions } from './run-query';

@@ -11,11 +11,17 @@ export class Executor {
     private indexManager?: IndexManager
   ) { }
 
-  async execute(plan: ExecutionNode, parameters: Record<string, any>): Promise<any[]> {
+  async *execute(plan: ExecutionNode, parameters: Record<string, any>): AsyncGenerator<any, void, unknown> {
     const rootOperator = this.buildOperatorTree(plan, parameters);
-    const results: any[] = [];
     let row;
     while (row = await rootOperator.next()) {
+      yield row;
+    }
+  }
+
+  async executeAll(plan: ExecutionNode, parameters: Record<string, any>): Promise<any[]> {
+    const results: any[] = [];
+    for await (const row of this.execute(plan, parameters)) {
       results.push(row);
     }
     return results;

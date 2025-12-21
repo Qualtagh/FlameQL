@@ -30,20 +30,31 @@ export interface RunQueryOptions {
  *
  * @example
  * ```typescript
- * const results = await runQuery(myProjection, {
+ * const results = await runQueryAll(myProjection, {
  *   db: firestore,
  *   parameters: { userId: '123' }
  * });
  * ```
  */
-export async function runQuery(
+export async function* runQuery(
   projection: Projection,
   options: RunQueryOptions = {}
-): Promise<any[]> {
+): AsyncGenerator<any, void, unknown> {
   const db = options.db ?? FlameConfig.db;
   const indexManager = FlameConfig.indexManager ?? new IndexManager();
   const planner = new Planner(indexManager);
   const plan = planner.plan(projection);
   const executor = new Executor(db, indexManager);
-  return executor.execute(plan, options.parameters ?? {});
+  yield* executor.execute(plan, options.parameters ?? {});
+}
+
+export async function runQueryAll(
+  projection: Projection,
+  options: RunQueryOptions = {}
+): Promise<any[]> {
+  const results: any[] = [];
+  for await (const row of runQuery(projection, options)) {
+    results.push(row);
+  }
+  return results;
 }

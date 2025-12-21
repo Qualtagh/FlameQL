@@ -39,8 +39,8 @@ describe('Parameterized Plan Execution', () => {
 
     // Execute with different params
     const executor = new Executor(db);
-    const result1 = await executor.execute(plan, { userId: 'u1' });
-    const result2 = await executor.execute(plan, { userId: 'u2' });
+    const result1 = await executor.executeAll(plan, { userId: 'u1' });
+    const result2 = await executor.executeAll(plan, { userId: 'u2' });
 
     expect(result1).toEqual([{ userName: 'Alice' }]);
     expect(result2).toEqual([{ userName: 'Bob' }]);
@@ -61,7 +61,7 @@ describe('Parameterized Plan Execution', () => {
     const executor = new Executor(db);
 
     // Missing parameter should throw at execution time
-    await expect(executor.execute(plan, {})).rejects.toThrow('Parameter "userId" was not provided.');
+    await expect(executor.executeAll(plan, {})).rejects.toThrow('Parameter "userId" was not provided.');
   });
 
   describe('Param predicate simplification', () => {
@@ -140,10 +140,10 @@ describe('Parameterized Plan Execution', () => {
     const executor = new Executor(db);
 
     // Execute with different parameters
-    const result1 = await executor.execute(plan, { prefix: 'X', matchPrefix: 'A' });
+    const result1 = await executor.executeAll(plan, { prefix: 'X', matchPrefix: 'A' });
     expect(result1).toEqual([{ name: 'alpha', combined: 'X-alpha' }]);
 
-    const result2 = await executor.execute(plan, { prefix: 'Y', matchPrefix: 'B' });
+    const result2 = await executor.executeAll(plan, { prefix: 'Y', matchPrefix: 'B' });
     expect(result2).toEqual([{ name: 'beta', combined: 'Y-beta' }]);
   });
 
@@ -171,7 +171,7 @@ describe('Parameterized Plan Execution', () => {
     expect(val.kind).toBe('FunctionExpression');
 
     const executor = new Executor(db);
-    const results = await executor.execute(plan, { prefixParam: 'A' });
+    const results = await executor.executeAll(plan, { prefixParam: 'A' });
 
     expect(results).toEqual([{ prefix: 'a' }]);
   });
