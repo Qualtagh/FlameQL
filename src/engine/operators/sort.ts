@@ -1,5 +1,6 @@
 import { SortNode } from '../ast';
 import { evaluate } from '../evaluator';
+import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { Operator, SortOrder } from './operator';
 
 export class Sort implements Operator {
@@ -38,22 +39,11 @@ export class Sort implements Operator {
       this.buffer.push(row);
     }
 
-    const comparators = this.node.orderBy.map(spec => ({
-      expression: spec.field,
-      dir: spec.direction === 'desc' ? -1 : 1,
+    const comparators: SortComparator[] = this.node.orderBy.map(spec => ({
+      getValue: (row: any) => evaluate(spec.field, row, this.parameters),
+      direction: spec.direction,
     }));
 
-    this.buffer.sort((a, b) => {
-      for (const cmp of comparators) {
-        const left = evaluate(cmp.expression, a, this.parameters);
-        const right = evaluate(cmp.expression, b, this.parameters);
-        if (left === right) continue;
-        if (left === undefined || left === null) return -cmp.dir;
-        if (right === undefined || right === null) return cmp.dir;
-        if (left < right) return -cmp.dir;
-        if (left > right) return cmp.dir;
-      }
-      return 0;
-    });
+    sortBuffer(this.buffer, comparators);
   }
 }
