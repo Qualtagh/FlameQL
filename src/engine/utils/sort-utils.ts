@@ -13,14 +13,20 @@ export function sortBuffer(buffer: any[], comparators: SortComparator[]): void {
       const left = cmp.getValue(a);
       const right = cmp.getValue(b);
       const dir = cmp.direction === 'asc' ? 1 : -1;
-      if (left === right) continue;
-      if (left === undefined && right === null) continue;
-      if (left === null && right === undefined) continue;
-      if (left === undefined || left === null) return -dir;
-      if (right === undefined || right === null) return dir;
-      if (left < right) return -dir;
-      if (left > right) return dir;
+      const result = compareValues(left, right);
+      if (result !== 0) return result * dir;
     }
     return 0;
   });
+}
+
+export function compareValues(a: any, b: any): number {
+  if (a === b) return 0;
+  if (a === undefined && b === null) return 0;
+  if (a === null && b === undefined) return 0;
+  if (a === undefined || a === null) return -1;
+  if (b === undefined || b === null) return 1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }

@@ -2,6 +2,7 @@ import { ComparisonPredicate, Field } from '../../api/expression';
 import { JoinNode } from '../ast';
 import { getValueFromField } from '../evaluator';
 import { isMergeJoinCompatible } from '../utils/operation-comparator';
+import { compareValues } from '../utils/sort-utils';
 import { Operator, SortOrder } from './operator';
 
 /**
@@ -100,7 +101,7 @@ export class MergeJoinOperator implements Operator {
 
     if (!leftSorted) {
       this.leftBuffer.sort((a, b) =>
-        this.compareValues(
+        compareValues(
           getValueFromField(a, this.leftField),
           getValueFromField(b, this.leftField)
         )
@@ -113,7 +114,7 @@ export class MergeJoinOperator implements Operator {
 
     if (!rightSorted) {
       this.rightBuffer.sort((a, b) =>
-        this.compareValues(
+        compareValues(
           getValueFromField(a, this.rightField),
           getValueFromField(b, this.rightField)
         )
@@ -135,7 +136,7 @@ export class MergeJoinOperator implements Operator {
     // Collect all left rows with this same value (handle duplicates)
     while (
       this.leftIndex < this.leftBuffer.length &&
-      this.compareValues(getValueFromField(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
+      compareValues(getValueFromField(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
     ) {
       this.currentLeftMatches.push(this.leftBuffer[this.leftIndex]);
       this.leftIndex++;
@@ -144,7 +145,7 @@ export class MergeJoinOperator implements Operator {
     // Update idxGe: find first right element >= leftValue
     while (this.idxGe < this.rightBuffer.length) {
       const rightValue = getValueFromField(this.rightBuffer[this.idxGe], this.rightField);
-      if (this.compareValues(rightValue, leftValue) >= 0) {
+      if (compareValues(rightValue, leftValue) >= 0) {
         break;
       }
       this.idxGe++;
@@ -157,7 +158,7 @@ export class MergeJoinOperator implements Operator {
     }
     while (this.idxGt < this.rightBuffer.length) {
       const rightValue = getValueFromField(this.rightBuffer[this.idxGt], this.rightField);
-      if (this.compareValues(rightValue, leftValue) > 0) {
+      if (compareValues(rightValue, leftValue) > 0) {
         break;
       }
       this.idxGt++;
@@ -200,20 +201,6 @@ export class MergeJoinOperator implements Operator {
     }
 
     return true;
-  }
-
-  private compareValues(a: any, b: any): number {
-    if (a === null || a === undefined) {
-      if (b === null || b === undefined) return 0;
-      return -1;
-    }
-    if (b === null || b === undefined) {
-      return 1;
-    }
-
-    if (a < b) return -1;
-    if (a > b) return 1;
-    return 0;
   }
 
   private ensureField(expr: any): Field {
