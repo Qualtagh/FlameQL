@@ -41,29 +41,9 @@ function generateFieldCode(field: Field): string {
   const source = field.source;
   if (!source) throw new Error('Field must have a source alias');
 
-  // Start with the row alias
-  let code = `row.${source}`;
-
-  for (const part of field.path) {
-    if (part.startsWith('#')) {
-      // Metadata field
-      switch (part) {
-        case '#id': return `${code}[DOC_ID]`;
-        case '#path': return `${code}[DOC_PATH]`;
-        case '#collection': return `${code}[DOC_COLLECTION]`;
-        case '#parent': return `${code}[DOC_PARENT]`;
-        default: throw new Error(`Unknown metadata field: ${part}`);
-      }
-    } else {
-      // Standard field - use bracket notation for safety with special chars,
-      // or dot notation if simple identifier.
-      // For simplicity/safety, we can use brackets for everything or check validity.
-      // Let's use brackets for safety.
-      code += `['${part.replace(/'/g, "\\'")}']`;
-    }
-  }
-
-  return code;
+  // Use runtime helper `getValue` to support array traversal and metadata fields
+  const pathParts = field.path.map(part => `'${part.replace(/'/g, "\\'")}'`).join(', ');
+  return `getValue(row.${source}, [${pathParts}])`;
 }
 
 function generateLiteralCode(literal: Literal): string {

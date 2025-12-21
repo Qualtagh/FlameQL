@@ -2,6 +2,7 @@ import { collection, eq, field, projection } from '../../src/api/api';
 import { JoinNode, ProjectNode } from '../../src/engine/ast';
 import { Executor } from '../../src/engine/executor';
 import { Planner } from '../../src/engine/planner';
+import { executeTest } from '../helpers/test-utils';
 import { clearDatabase, db } from '../setup';
 
 describe('Executor', () => {
@@ -22,7 +23,7 @@ describe('Executor', () => {
     const planner = new Planner();
     const plan = planner.plan(p);
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toStrictEqual([
       { id: 'job1', title: 'Software Engineer' },
@@ -48,7 +49,7 @@ describe('Executor', () => {
     const planner = new Planner();
     const plan = planner.plan(p);
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toStrictEqual([
       { price: 100, tags: ['sale', 'new'] },
@@ -70,7 +71,7 @@ describe('Executor', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results.length).toBe(1);
     expect(results[0].count).toBe(2);
@@ -96,7 +97,7 @@ describe('Executor', () => {
     joinNode.condition = eq(field('j.#id'), field('s.jobId'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toStrictEqual([
       { jobId: 'job1', jobTitle: 'Software Engineer', shiftDate: '2023-01-01' },

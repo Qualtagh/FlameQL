@@ -1,7 +1,8 @@
-import { and, arrayContains, collection, eq, field, gt, JoinStrategy, projection } from '../../../src/api/api';
+import { and, apply, arrayContains, collection, eq, field, gt, JoinStrategy, projection } from '../../../src/api/api';
 import { JoinNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { Planner } from '../../../src/engine/planner';
+import { executeTest } from '../../helpers/test-utils';
 import { clearDatabase, db } from '../../setup';
 
 describe('NestedLoopJoinOperator', () => {
@@ -11,6 +12,37 @@ describe('NestedLoopJoinOperator', () => {
 
   it('should join using NestedLoopJoinStrategy (equality condition)', async () => {
     // Seed data
+    await db.collection('users').doc('1').set({ id: 1, val: 'a' });
+    await db.collection('users').doc('2').set({ id: 2, val: 'b' });
+
+    await db.collection('orders').doc('101').set({ userId: '1', other: 'x' });
+    await db.collection('orders').doc('102').set({ userId: '2', other: 'y' });
+    await db.collection('orders').doc('103').set({ userId: '1', other: 'z' });
+
+    const p = projection({
+      id: 'test',
+      from: { u: collection('users'), o: collection('orders') },
+      select: { uVal: field('u.val'), oOther: field('o.other') },
+    });
+
+    const planner = new Planner();
+    const plan = planner.plan(p) as ProjectNode;
+    const joinNode = plan.source as JoinNode;
+
+    // Force NestedLoop Join
+    joinNode.joinType = JoinStrategy.NestedLoop;
+    joinNode.condition = eq(field('u.#id'), field('o.userId'));
+
+    const executor = new Executor(db);
+    const results = await executeTest(executor, plan, {});
+
+    expect(results).toHaveLength(3);
+    expect(results).toContainEqual({ uVal: 'a', oOther: 'x' });
+    expect(results).toContainEqual({ uVal: 'a', oOther: 'z' });
+    expect(results).toContainEqual({ uVal: 'b', oOther: 'y' });
+  });
+
+  it('should join using NestedLoopJoinStrategy (convert ID)', async () => {
     await db.collection('users').doc('1').set({ id: 1, val: 'a' });
     await db.collection('users').doc('2').set({ id: 2, val: 'b' });
 
@@ -30,10 +62,10 @@ describe('NestedLoopJoinOperator', () => {
 
     // Force NestedLoop Join
     joinNode.joinType = JoinStrategy.NestedLoop;
-    joinNode.condition = eq(field('u.#id'), field('o.userId'));
+    joinNode.condition = eq(field('u.#id'), apply(field('o.userId'), id => id.toString()));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(3);
     expect(results).toContainEqual({ uVal: 'a', oOther: 'x' });
@@ -63,7 +95,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = gt(field('s.val'), field('t.limit'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     // 20 > 15
     // 30 > 15
@@ -95,7 +127,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = arrayContains(field('p.tags'), field('s.tag'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(1);
     expect(results).toContainEqual({ pTags: ['a', 'b', 'c'], sTag: 'b' });
@@ -127,7 +159,7 @@ describe('NestedLoopJoinOperator', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ iTags: ['a', 'b'], fOptions: ['b', 'c'] });
@@ -159,7 +191,7 @@ describe('NestedLoopJoinOperator', () => {
     };
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(2);
     expect(results).toContainEqual({ tStatus: 'active', rAllowed: ['active', 'pending'] });
@@ -187,7 +219,7 @@ describe('NestedLoopJoinOperator', () => {
     joinNode.condition = eq(field('p.price.currency'), field('r.code'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toStrictEqual([{
       pPrice: { value: 20, currency: 'USD' },
@@ -203,9 +235,9 @@ describe('NestedLoopJoinOperator', () => {
     await db.collection('users').doc('2').set({ id: 2, role: 'user', active: true });
     await db.collection('users').doc('3').set({ id: 3, role: 'user', active: false });
 
-    await db.collection('logs').doc('l1').set({ userId: 1, action: 'login' });
-    await db.collection('logs').doc('l2').set({ userId: 2, action: 'logout' });
-    await db.collection('logs').doc('l3').set({ userId: 3, action: 'login' });
+    await db.collection('logs').doc('l1').set({ userId: '1', action: 'login' });
+    await db.collection('logs').doc('l2').set({ userId: '2', action: 'logout' });
+    await db.collection('logs').doc('l3').set({ userId: '3', action: 'login' });
 
     const p = projection({
       id: 'test',
@@ -224,7 +256,7 @@ describe('NestedLoopJoinOperator', () => {
 
     // Let's adjust data to make it match
     await db.collection('users').doc('4').set({ id: 4, role: 'login', active: true });
-    await db.collection('logs').doc('l4').set({ userId: 4, action: 'login' });
+    await db.collection('logs').doc('l4').set({ userId: '4', action: 'login' });
 
     joinNode.condition = and([
       eq(field('u.#id'), field('l.userId')),
@@ -232,7 +264,7 @@ describe('NestedLoopJoinOperator', () => {
     ]);
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({ uId: 4, lAction: 'login' });

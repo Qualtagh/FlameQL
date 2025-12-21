@@ -1,13 +1,12 @@
 import { OrderByDirection } from '@google-cloud/firestore';
 import { UnionDistinctStrategy } from '../ast';
-import { evaluatePredicate } from '../evaluator';
-import { DOC_COLLECTION, DOC_ID, DOC_PARENT, DOC_PATH } from '../symbols';
+import { evaluatePredicate, getValue } from '../evaluator';
 import { docToAliasedRow } from '../utils/firestore-utils';
 import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { createUnionDeduplicator } from '../utils/union-utils';
 
 // Re-export symbols for use in generated code
-export { DOC_COLLECTION, DOC_ID, DOC_PARENT, DOC_PATH, evaluatePredicate };
+export { evaluatePredicate, getValue };
 
 /**
  * Helper to extract document data with metadata fields.

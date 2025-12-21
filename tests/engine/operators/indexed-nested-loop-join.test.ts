@@ -3,6 +3,7 @@ import { JoinNode, NodeType, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { IndexManager } from '../../../src/engine/indexes/index-manager';
 import { Planner } from '../../../src/engine/planner';
+import { executeTest } from '../../helpers/test-utils';
 import { clearDatabase, db } from '../../setup';
 
 describe('IndexedNestedLoopJoinOperator', () => {
@@ -32,7 +33,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(31);
     expect(results).toContainEqual({ uId: 1, oTotal: 10 });
@@ -71,7 +72,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     joinNode.condition = eq(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(2);
     expect(results).toContainEqual({ uId: 1, oStatus: 'paid' });
@@ -113,7 +114,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     expect(joinNode.joinType).toBe(JoinStrategy.IndexedNestedLoop);
 
     const executor = new Executor(db, indexManager);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(2);
     expect(results).toContainEqual({ uId: 1, oTotal: 10 });
@@ -143,7 +144,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     joinNode.condition = gt(field('u.id'), field('o.userId'));
 
     const executor = new Executor(db);
-    const results = await executor.executeAll(plan, {});
+    const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(3);
     expect(results).toContainEqual({ uId: 3, oUserId: 2 });

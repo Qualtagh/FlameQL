@@ -28,10 +28,10 @@ function buildOperationComparator(
 ): (a: any, b: any) => boolean {
   switch (operation) {
     case '==':
-      return (a, b) => a == b;
+      return (a, b) => a === b;
 
     case '!=':
-      return (a, b) => a != b;
+      return (a, b) => a !== b;
 
     case '<':
       return (a, b) => a < b;

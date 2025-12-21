@@ -26,7 +26,7 @@ describe('planToCode', () => {
 
     const expectedCode = align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, unionRows, sortRows, DOC_ID, DOC_PATH, DOC_COLLECTION, DOC_PARENT } from 'flameql/codegen/runtime';
+      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows } from 'flameql/codegen/runtime';
 
       export async function orderUserQuery(
         db: Firestore,
@@ -58,7 +58,7 @@ describe('planToCode', () => {
           for await (const leftRow of scan_o()) {
             for (const rightRow of rightBuffer) {
               const row = { ...leftRow, ...rightRow };
-              if (row.o['userId'] === row.u[DOC_ID]) {
+              if (getValue(row.o, ['userId']) === getValue(row.u, ['#id'])) {
                 yield row;
               }
             }
@@ -77,8 +77,8 @@ describe('planToCode', () => {
         async function* project_0() {
           for await (const row of limit_0()) {
             yield {
-              orderId: row.o[DOC_ID],
-              userName: row.u['name'],
+              orderId: getValue(row.o, ['#id']),
+              userName: getValue(row.u, ['name']),
             };
           }
         }

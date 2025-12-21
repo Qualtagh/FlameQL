@@ -1,6 +1,7 @@
 import { eq, field, JoinStrategy } from '../../../src/api/api';
 import { JoinNode, NodeType, ScanNode, UnionDistinctStrategy, UnionNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
+import { executeTest } from '../../helpers/test-utils';
 import { clearDatabase, db } from '../../setup';
 
 describe('Union Operator', () => {
@@ -40,7 +41,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.DocPath,
       };
 
-      const results = await executor.executeAll(unionPlan, {});
+      const results = await executeTest(executor, unionPlan, {});
 
       // 4 unique users (deduplicated by DOC_PATH)
       expect(results.length).toBe(4);
@@ -81,7 +82,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.DocPath,
       };
 
-      const results = await executor.executeAll(unionPlan, {});
+      const results = await executeTest(executor, unionPlan, {});
 
       // Expected join cardinality:
       // user1 joins o1, o2 (2 rows); user2 joins o3 (1 row) => 3 rows total
@@ -114,7 +115,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.HashMap,
       };
 
-      const results = await executor.executeAll(unionPlan, {});
+      const results = await executeTest(executor, unionPlan, {});
 
       // 8 results because different aliases make rows structurally different
       // (u1: {...} vs u2: {...})
@@ -143,7 +144,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.HashMap,
       };
 
-      const results = await executor.executeAll(unionPlan, {});
+      const results = await executeTest(executor, unionPlan, {});
 
       // 4 unique rows (same alias, same data = same content hash)
       expect(results.length).toBe(4);
@@ -172,7 +173,7 @@ describe('Union Operator', () => {
         distinct: UnionDistinctStrategy.None,
       };
 
-      const results = await executor.executeAll(unionPlan, {});
+      const results = await executeTest(executor, unionPlan, {});
 
       // 8 total (4 + 4, no deduplication)
       expect(results.length).toBe(8);

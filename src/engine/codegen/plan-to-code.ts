@@ -25,7 +25,7 @@ export function planToCode(
   if (includeImports) {
     code += align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, unionRows, sortRows, DOC_ID, DOC_PATH, DOC_COLLECTION, DOC_PARENT } from 'flameql/codegen/runtime';
+      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows } from 'flameql/codegen/runtime';
 
     `;
   }

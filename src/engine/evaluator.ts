@@ -73,7 +73,7 @@ export function evaluatePredicate(predicate: Predicate, row: any, parameters: Re
   }
 }
 
-function getValue(row: any, path: string[]): any {
+export function getValue(row: any, path: string[]): any {
   let value = row;
   for (let i = 0; i < path.length; i++) {
     const part = path[i];

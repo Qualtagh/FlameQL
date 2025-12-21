@@ -1,6 +1,7 @@
 import { and, arrayContains, collection, field, gt, JoinStrategy, literal, lt, projection } from '../../src/api/api';
 import { Executor } from '../../src/engine/executor';
 import { Planner } from '../../src/engine/planner';
+import { executeTest } from '../helpers/test-utils';
 import { clearDatabase, db } from '../setup';
 
 describe('Planner guardrails', () => {
@@ -74,7 +75,7 @@ describe('Planner guardrails', () => {
 
     const warnSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
     const executor = new Executor(db);
-    await executor.executeAll(plan, {});
+    await executeTest(executor, plan, {});
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
