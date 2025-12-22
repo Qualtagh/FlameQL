@@ -25,7 +25,7 @@ export function planToCode(
   if (includeImports) {
     code += align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
+      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
 
     `;
   }
@@ -100,7 +100,7 @@ class CodeGenContext {
   }
 
   private generateScan(node: ScanNode): string {
-    const name = `scan_${node.alias}`;
+    const name = `scan_${node.alias.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const method = node.collectionGroup ? 'collectionGroup' : 'collection';
 
     const constraints = (node.constraints ?? [])
@@ -124,15 +124,15 @@ class CodeGenContext {
 
     const limit = node.limit !== undefined ? `query = query.limit(${node.limit});` : '';
     const offset = node.offset !== undefined ? `query = query.offset(${node.offset});` : '';
-
     const middle = [constraints, orderBy, limit, offset].filter(Boolean).join('\n');
+    const alias = /[^a-zA-Z0-9]/.test(node.alias) ? `'${node.alias.replace(/'/g, '\\\'')}'` : node.alias;
 
     const body = align`
       async function* ${name}() {
         let query: FirebaseFirestore.Query = db.${method}('${node.collectionPath}');
         ${middle}
         for await (const doc of query.stream()) {
-          yield { ${node.alias}: getData(doc as any) };
+          yield { ${alias}: getDocData(doc) };
         }
       }
     `;

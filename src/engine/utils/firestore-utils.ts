@@ -1,5 +1,5 @@
-import * as admin from 'firebase-admin';
 import { OrderByDirection, WhereFilterOp } from '@google-cloud/firestore';
+import * as admin from 'firebase-admin';
 import { DOC_COLLECTION, DOC_ID, DOC_PARENT, DOC_PATH, DocumentMetadata } from '../symbols';
 
 export type FirestoreWhereConstraint = {
@@ -47,12 +47,11 @@ export function buildFirestoreQuery(
   return query;
 }
 
-export function docToAliasedRow(alias: string, doc: admin.firestore.QueryDocumentSnapshot): any {
-  const docData = {
+export function getDocData(doc: admin.firestore.QueryDocumentSnapshot): any {
+  return {
     ...createMetadata(doc.ref.path),
     ...doc.data(),
   };
-  return { [alias]: docData };
 }
 
 /**

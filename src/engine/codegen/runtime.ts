@@ -1,20 +1,13 @@
 import { OrderByDirection } from '@google-cloud/firestore';
 import { UnionDistinctStrategy } from '../ast';
 import { evaluatePredicate, getValue } from '../evaluator';
-import { docToAliasedRow } from '../utils/firestore-utils';
+import { getDocData } from '../utils/firestore-utils';
 import { JoinHashTable } from '../utils/hash-join-utils';
 import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { createUnionDeduplicator } from '../utils/union-utils';
 
 // Re-export symbols for use in generated code
-export { evaluatePredicate, getValue, JoinHashTable };
-
-/**
- * Helper to extract document data with metadata fields.
- */
-export function getData(doc: FirebaseFirestore.QueryDocumentSnapshot): any {
-  return docToAliasedRow('alias', doc).alias;
-}
+export { evaluatePredicate, getDocData, getValue, JoinHashTable };
 
 /**
  * Helper for UNION operator with deduplication.

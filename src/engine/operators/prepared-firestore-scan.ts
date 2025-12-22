@@ -3,7 +3,7 @@ import { and, constant } from '../../api/api';
 import { Expression, Field, Predicate } from '../../api/expression';
 import { Constraint, ExecutionNode, FilterNode, NodeType, ScanNode } from '../ast';
 import { evaluate, evaluatePredicate } from '../evaluator';
-import { buildFirestoreQuery, docToAliasedRow, FirestoreOrderBy, FirestoreWhereConstraint } from '../utils/firestore-utils';
+import { buildFirestoreQuery, FirestoreOrderBy, FirestoreWhereConstraint, getDocData } from '../utils/firestore-utils';
 
 export interface PreparedFirestoreScanPlan {
   scan: ScanNode;
@@ -51,7 +51,7 @@ export class PreparedFirestoreCursor {
         return null;
       }
 
-      const row = docToAliasedRow(this.plan.scan.alias, value);
+      const row = { [this.plan.scan.alias]: getDocData(value) };
       if (!evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
         continue;
       }

@@ -26,7 +26,7 @@ describe('planToCode', () => {
 
     const expectedCode = align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
+      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
 
       export async function orderUserQuery(
         db: Firestore,
@@ -36,7 +36,7 @@ describe('planToCode', () => {
           let query: FirebaseFirestore.Query = db.collection('orders');
           query = query.where('status', '==', 'active');
           for await (const doc of query.stream()) {
-            yield { o: getData(doc as any) };
+            yield { o: getDocData(doc) };
           }
         }
 
@@ -44,7 +44,7 @@ describe('planToCode', () => {
           let query: FirebaseFirestore.Query = db.collection('users');
           query = query.where('age', '>=', 18);
           for await (const doc of query.stream()) {
-            yield { u: getData(doc as any) };
+            yield { u: getDocData(doc) };
           }
         }
 
