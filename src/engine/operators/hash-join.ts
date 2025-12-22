@@ -1,6 +1,8 @@
+import { WhereFilterOp } from '@google-cloud/firestore';
 import { ComparisonPredicate, Field } from '../../api/expression';
 import { JoinNode } from '../ast';
 import { getValueFromField } from '../evaluator';
+import { JoinHashTable } from '../utils/hash-join-utils';
 import { isHashJoinCompatible } from '../utils/operation-comparator';
 import { Operator, SortOrder } from './operator';
 
@@ -15,17 +17,14 @@ import { Operator, SortOrder } from './operator';
  * Requirement: Hash-compatible operations (==, in, array-contains, array-contains-any).
  */
 export class HashJoinOperator implements Operator {
-  private hashTable: Map<string, any[]> = new Map();
+  private hashTable: JoinHashTable | null = null;
   private initialized = false;
   private currentLeftRow: any | null = null;
   private currentMatches: any[] | null = null;
   private matchIndex = 0;
   private leftField: Field;
   private rightField: Field;
-  private operation: string;
-  private buildField: Field;
-  private probeField: Field;
-  private oriented = false;
+  private operation: WhereFilterOp;
 
   constructor(
     private leftSource: Operator,
@@ -41,8 +40,6 @@ export class HashJoinOperator implements Operator {
     this.operation = condition.operation;
     this.leftField = this.ensureField(condition.left);
     this.rightField = this.ensureField(condition.right);
-    this.buildField = this.rightField;
-    this.probeField = this.leftField;
   }
 
   async next(): Promise<any | null> {
@@ -60,96 +57,24 @@ export class HashJoinOperator implements Operator {
       this.currentLeftRow = await this.leftSource.next();
       if (!this.currentLeftRow) return null;
 
-      const leftValue = getValueFromField(this.currentLeftRow, this.probeField);
-      this.currentMatches = this.findMatches(leftValue);
+      const leftValue = getValueFromField(this.currentLeftRow, this.leftField);
+      this.currentMatches = this.hashTable!.get(leftValue);
       this.matchIndex = 0;
     }
   }
 
   private async buildHashTable() {
+    this.hashTable = new JoinHashTable(this.operation);
     let row;
     while (row = await this.rightSource.next()) {
-      if (!this.oriented) {
-        this.orientFields(row);
-      }
-      const val = getValueFromField(row, this.buildField);
-
-      if (val !== undefined && val !== null) {
-        if ((this.operation === 'in' || this.operation === 'array-contains-any') && Array.isArray(val)) {
-          for (const element of val) {
-            const key = String(element);
-            if (!this.hashTable.has(key)) {
-              this.hashTable.set(key, []);
-            }
-            this.hashTable.get(key)!.push(row);
-          }
-        } else {
-          const key = String(val);
-          if (!this.hashTable.has(key)) {
-            this.hashTable.set(key, []);
-          }
-          this.hashTable.get(key)!.push(row);
-        }
-      }
-    }
-  }
-
-  private findMatches(leftValue: any): any[] | null {
-    if (leftValue === undefined || leftValue === null) {
-      return null;
-    }
-
-    switch (this.operation) {
-      case '==':
-      case 'in': {
-        // For 'in', leftValue is a scalar, rightValue is an array
-        // During buildHashTable, we indexed each element of the right array
-        // Now we simply look up the scalar leftValue in the hash table
-        const key = String(leftValue);
-        return this.hashTable.get(key) || null;
-      }
-      case 'array-contains':
-      case 'array-contains-any':
-        // Hash table indexed by right values, look up leftValue
-        if (Array.isArray(leftValue)) {
-          const matches = new Set<any>();
-          for (const element of leftValue) {
-            const elementKey = String(element);
-            const elementMatches = this.hashTable.get(elementKey);
-            if (elementMatches) {
-              elementMatches.forEach(m => matches.add(m));
-            }
-          }
-          return matches.size > 0 ? Array.from(matches) : null;
-        }
-        return null;
-      default:
-        return null;
+      const val = getValueFromField(row, this.rightField);
+      this.hashTable.add(val, row);
     }
   }
 
   getSortOrder(): SortOrder | undefined {
     // Hash join preserves the order of the LEFT input stream.
     return this.leftSource.getSortOrder();
-  }
-
-  private orientFields(sample: any) {
-    const rightHasRightField = this.hasSource(sample, this.rightField);
-    const rightHasLeftField = this.hasSource(sample, this.leftField);
-
-    if (rightHasRightField) {
-      this.buildField = this.rightField;
-      this.probeField = this.leftField;
-    } else if (rightHasLeftField) {
-      this.buildField = this.leftField;
-      this.probeField = this.rightField;
-    }
-
-    this.oriented = true;
-  }
-
-  private hasSource(row: any, field: Field): boolean {
-    return row && field.source in row;
   }
 
   private ensureField(expr: any): Field {

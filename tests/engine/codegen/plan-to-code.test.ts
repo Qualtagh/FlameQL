@@ -26,7 +26,7 @@ describe('planToCode', () => {
 
     const expectedCode = align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows } from 'flameql/codegen/runtime';
+      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
 
       export async function orderUserQuery(
         db: Firestore,
@@ -49,17 +49,19 @@ describe('planToCode', () => {
         }
 
         async function* join_0() {
-          // WARNING: Join strategy 'hash' handled as Nested Loop.
-          const rightBuffer: any[] = [];
+          const hashTable = new JoinHashTable('==');
+
           for await (const row of scan_u()) {
-            rightBuffer.push(row);
+            const key = getValue(row.u, ['#id']);
+            hashTable.add(key, row);
           }
 
-          for await (const leftRow of scan_o()) {
-            for (const rightRow of rightBuffer) {
-              const row = { ...leftRow, ...rightRow };
-              if (getValue(row.o, ['userId']) === getValue(row.u, ['#id'])) {
-                yield row;
+          for await (const row of scan_o()) {
+            const probeValue = getValue(row.o, ['userId']);
+            const matches = hashTable.get(probeValue);
+            if (matches) {
+              for (const match of matches) {
+                yield { ...row, ...match };
               }
             }
           }

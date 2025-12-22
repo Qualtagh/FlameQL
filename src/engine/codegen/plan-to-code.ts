@@ -1,4 +1,4 @@
-import { JoinStrategy } from '../../api/expression';
+import { ComparisonPredicate, JoinStrategy } from '../../api/expression';
 import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
 import { align, indent, toCamelCase } from '../utils/string-utils';
 import { generateExpressionCode, generateExpressionSelector, generatePredicateCode } from './expression-codegen';
@@ -25,7 +25,7 @@ export function planToCode(
   if (includeImports) {
     code += align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows } from 'flameql/codegen/runtime';
+      import { getData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
 
     `;
   }
@@ -222,6 +222,38 @@ class CodeGenContext {
               const row = { ...leftRow, ...rightRow };
               if (${conditionCode}) {
                 yield row;
+              }
+            }
+          }
+        }
+      `;
+    } else if (node.joinType === JoinStrategy.Hash) {
+      const condition = node.condition as ComparisonPredicate;
+      const leftExpr = condition.left;
+      const rightExpr = condition.right;
+
+      if (Array.isArray(rightExpr)) {
+        throw new Error('Hash Join right operand cannot be an array');
+      }
+
+      const leftCode = generateExpressionCode(leftExpr);
+      const rightCode = generateExpressionCode(rightExpr);
+
+      body = align`
+        async function* ${name}() {
+          const hashTable = new JoinHashTable('${condition.operation}');
+
+          for await (const row of ${rightName}()) {
+            const key = ${rightCode};
+            hashTable.add(key, row);
+          }
+
+          for await (const row of ${leftName}()) {
+            const probeValue = ${leftCode};
+            const matches = hashTable.get(probeValue);
+            if (matches) {
+              for (const match of matches) {
+                yield { ...row, ...match };
               }
             }
           }
