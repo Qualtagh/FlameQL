@@ -52,3 +52,23 @@ export async function* sortRows(
     yield row;
   }
 }
+
+/**
+ * Helper for batching rows from a generator.
+ */
+export async function* batchRows(
+  generator: AsyncGenerator<any, void, unknown>,
+  batchSize: number
+): AsyncGenerator<any[], void, unknown> {
+  let batch: any[] = [];
+  for await (const row of generator) {
+    batch.push(row);
+    if (batch.length >= batchSize) {
+      yield batch;
+      batch = [];
+    }
+  }
+  if (batch.length > 0) {
+    yield batch;
+  }
+}

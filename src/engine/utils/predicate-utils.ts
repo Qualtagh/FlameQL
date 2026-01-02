@@ -7,7 +7,7 @@ const IN_LIST_MAX = 30;
 const NOT_IN_LIST_MAX = 10;
 const ARRAY_CONTAINS_ANY_MAX = 30;
 
-export function maxPerOperation(operation: WhereFilterOp): number {
+export function maxPerOperation(operation?: WhereFilterOp): number {
   switch (operation) {
     case 'in':
       return IN_LIST_MAX;

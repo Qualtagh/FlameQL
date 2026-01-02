@@ -26,7 +26,7 @@ describe('planToCode', () => {
 
     const expectedCode = align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
+      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, batchRows, JoinHashTable } from 'flameql/codegen/runtime';
 
       export async function orderUserQuery(
         db: Firestore,

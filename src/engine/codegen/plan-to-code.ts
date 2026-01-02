@@ -1,5 +1,6 @@
 import { ComparisonPredicate, JoinStrategy } from '../../api/expression';
 import { AggregateNode, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
+import { maxPerOperation } from '../utils/predicate-utils';
 import { align, indent, toCamelCase } from '../utils/string-utils';
 import { generateExpressionCode, generateExpressionSelector, generatePredicateCode } from './expression-codegen';
 
@@ -25,7 +26,7 @@ export function planToCode(
   if (includeImports) {
     code += align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, JoinHashTable } from 'flameql/codegen/runtime';
+      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, batchRows, JoinHashTable } from 'flameql/codegen/runtime';
 
     `;
   }
@@ -248,26 +249,53 @@ class CodeGenContext {
       `;
     } else if (node.joinType === JoinStrategy.IndexedNestedLoop) {
       const indexJoin = (node as IndexedNestedLoopJoinNode).indexJoin;
-      const leftExprCode = generateExpressionCode(indexJoin.leftExpr);
-      const drivingValueExpr = indexJoin.mode === 'batch' ? '[lookupValue]' : 'lookupValue';
+      const leftSelectorCode = generateExpressionSelector(indexJoin.leftExpr);
+      const isBatch = indexJoin.mode === 'batch';
+      const batchSize = maxPerOperation((node.right as PreparedScanNode).driver?.op);
 
-      body = align`
-        async function* ${name}() {
-          for await (const leftRow of ${leftName}()) {
-            const row = leftRow;
-            const lookupValue = ${leftExprCode};
+      if (isBatch && batchSize > 1) {
+        body = align`
+          async function* ${name}() {
+            const leftSelector = ${leftSelectorCode};
+            for await (const leftRows of batchRows(${leftName}(), ${batchSize})) {
+              const lookupValues = leftRows
+                .map(row => leftSelector(row, params))
+                .filter(v => v !== undefined && v !== null);
 
-            // Note: Batch mode handling is simplified here to per-row for code generation.
-            // A production-grade code generator would handle batching similarly to the interpreter.
-            if (lookupValue === undefined || lookupValue === null) continue;
-            for await (const rightRow of ${rightName}(${drivingValueExpr})) {
-              const row = { ...leftRow, ...rightRow };
-              if (!(${conditionCode})) continue;
-              yield row;
+              if (lookupValues.length === 0) continue;
+
+              const rightBuffer: any[] = [];
+              for await (const rightRow of ${rightName}(lookupValues)) {
+                rightBuffer.push(rightRow);
+              }
+
+              for (const leftRow of leftRows) {
+                for (const rightRow of rightBuffer) {
+                  const row = { ...leftRow, ...rightRow };
+                  if (!(${conditionCode})) continue;
+                  yield row;
+                }
+              }
             }
           }
-        }
-      `;
+        `;
+      } else {
+        body = align`
+          async function* ${name}() {
+            const leftSelector = ${leftSelectorCode};
+            for await (const leftRow of ${leftName}()) {
+              const lookupValue = leftSelector(leftRow, params);
+
+              if (lookupValue === undefined || lookupValue === null) continue;
+              for await (const rightRow of ${rightName}(lookupValue)) {
+                const row = { ...leftRow, ...rightRow };
+                if (!(${conditionCode})) continue;
+                yield row;
+              }
+            }
+          }
+        `;
+      }
     } else if (node.joinType === JoinStrategy.Hash) {
       const condition = node.condition as ComparisonPredicate;
       const leftExpr = condition.left;
