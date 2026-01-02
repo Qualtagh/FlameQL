@@ -4,8 +4,8 @@ import { ComparisonPredicate, CompositePredicate, ConstantPredicate, CustomPredi
 import { createOperationComparator, invertComparisonOp } from './operation-comparator';
 
 const IN_LIST_MAX = 30;
-const NOT_IN_LIST_MAX = 30;
-const ARRAY_CONTAINS_ANY_MAX = 10;
+const NOT_IN_LIST_MAX = 10;
+const ARRAY_CONTAINS_ANY_MAX = 30;
 
 export function maxPerOperation(operation: WhereFilterOp): number {
   switch (operation) {
@@ -16,7 +16,7 @@ export function maxPerOperation(operation: WhereFilterOp): number {
     case 'array-contains-any':
       return ARRAY_CONTAINS_ANY_MAX;
     default:
-      throw new Error(`Unsupported operation: ${operation}`);
+      return 1;
   }
 }
 

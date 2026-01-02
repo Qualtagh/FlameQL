@@ -246,7 +246,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     const max = maxPerOperation(op);
 
     // Ops that require an ARRAY constant.
-    if (op === 'in' || op === 'array-contains-any' || op === 'not-in') {
+    if (max > 1) {
       if (!Array.isArray(leftVal)) return [];
       const unique = uniqueNonNull(leftVal);
       if (unique.length === 0) return [];
