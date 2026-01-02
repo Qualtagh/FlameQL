@@ -128,6 +128,9 @@ export function compare(
 }
 
 export function like(left: Expression, pattern: Expression): CustomPredicate {
+  // TODO: separate preparation and execution phases.
+  // Right now, functions are serialized by code generator.
+  // Either avoid serialization entirely, or serialize preparation and execution separately.
   return compare(
     [left, pattern],
     ([value, pat]) => {

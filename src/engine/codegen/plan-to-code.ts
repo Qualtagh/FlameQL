@@ -327,7 +327,7 @@ class CodeGenContext {
           }
         }
       `;
-    } else {
+    } else if (node.joinType === JoinStrategy.Merge) {
       body = align`
         async function* ${name}() {
           // WARNING: Join strategy '${node.joinType}' handled as Nested Loop.
@@ -345,6 +345,11 @@ class CodeGenContext {
           }
         }
       `;
+    } else if (node.joinType === JoinStrategy.Auto) {
+      throw new Error('Automatic selection of join strategy should have been handled by the planner');
+    } else {
+      node.joinType satisfies never;
+      throw new Error(`Unsupported join strategy: ${node.joinType}`);
     }
 
     this.addDefinition(indent(body, 2));
