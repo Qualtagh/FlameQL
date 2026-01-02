@@ -1,45 +1,28 @@
 import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
 import { Operator, SortOrder } from './operator';
-import { PreparedFirestoreCursor, PreparedFirestoreScan } from './prepared-firestore-scan';
+import { PreparedFirestoreScan } from './prepared-firestore-scan';
 
 export class FirestoreScan implements Operator {
-  private cursor: PreparedFirestoreCursor | null = null;
-  private sortOrder?: SortOrder;
+  private prepared: PreparedFirestoreScan;
 
   constructor(
     private db: admin.firestore.Firestore,
     private node: ScanNode,
     private parameters: Record<string, any>
-  ) { }
+  ) {
+    this.prepared = new PreparedFirestoreScan(db, node, parameters);
+    this.prepared.setOptions({
+      includeScanOrderBy: true,
+      includeScanLimitOffset: true,
+    });
+  }
 
   async next(): Promise<any | null> {
-    if (!this.cursor) {
-      if (this.node.orderBy && this.node.orderBy.length > 0) {
-        const primary = this.node.orderBy[0];
-        if (primary.field.kind === 'Field') {
-          this.sortOrder = {
-            // Operators reason about sort order on the *row stream*, which is aliased:
-            // `{ [alias]: docData }`. Use alias-qualified field refs for consistency with
-            // `Sort` and `MergeJoinOperator`.
-            field: `${this.node.alias}.${primary.field.path.join('.')}`,
-            direction: primary.direction,
-          };
-        }
-      }
-
-      const prepared = new PreparedFirestoreScan(this.db, this.node, this.parameters);
-      this.cursor = prepared.createCursor({
-        includeBaseWhere: true,
-        includeScanOrderBy: true,
-        includeScanLimitOffset: true,
-      });
-    }
-
-    return this.cursor.next();
+    return this.prepared.next();
   }
 
   getSortOrder(): SortOrder | undefined {
-    return this.sortOrder;
+    return this.prepared.getSortOrder();
   }
 }

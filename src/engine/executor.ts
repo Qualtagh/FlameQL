@@ -1,8 +1,8 @@
 import * as admin from 'firebase-admin';
 import { JoinStrategy } from '../api/hints';
-import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, UnionNode } from './ast';
+import { AggregateNode, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
-import { Aggregate, Filter, FirestoreScan, HashJoinOperator, IndexedNestedLoopJoinOperator, Limit, MergeJoinOperator, NestedLoopJoinOperator, Operator, Project, Sort } from './operators/operators';
+import { Aggregate, Filter, FirestoreScan, HashJoinOperator, IndexedNestedLoopJoinOperator, Limit, MergeJoinOperator, NestedLoopJoinOperator, Operator, PreparedFirestoreScan, Project, Sort } from './operators/operators';
 import { Union } from './operators/union';
 
 export class Executor {
@@ -31,28 +31,30 @@ export class Executor {
     switch (node.type) {
       case NodeType.SCAN:
         return new FirestoreScan(this.db, node as ScanNode, parameters);
+      case NodeType.PREPARED_SCAN:
+        return new PreparedFirestoreScan(this.db, node as PreparedScanNode, parameters);
       case NodeType.JOIN:
         const joinNode = node as JoinNode;
         const hint = joinNode.joinType;
         const left = this.buildOperatorTree(joinNode.left, parameters);
-        const right = hint === JoinStrategy.IndexedNestedLoop ? null : this.buildOperatorTree(joinNode.right, parameters);
+        const right = this.buildOperatorTree(joinNode.right, parameters);
         if (joinNode.crossProduct) {
           console.log('FlameQL: executing cross-product join (no predicate provided).');
         }
         switch (hint) {
           case JoinStrategy.Hash:
-            return new HashJoinOperator(left, right!, joinNode);
+            return new HashJoinOperator(left, right, joinNode);
           case JoinStrategy.Merge:
-            return new MergeJoinOperator(left, right!, joinNode);
+            return new MergeJoinOperator(left, right, joinNode);
           case JoinStrategy.NestedLoop:
-            return new NestedLoopJoinOperator(left, right!, joinNode, parameters);
+            return new NestedLoopJoinOperator(left, right, joinNode, parameters);
           case JoinStrategy.IndexedNestedLoop:
             // Indexed nested-loop uses the right PLAN node to execute parameterized scans.
             return new IndexedNestedLoopJoinOperator(
               this.db,
               left,
-              joinNode.right,
-              joinNode,
+              right,
+              joinNode as IndexedNestedLoopJoinNode,
               parameters,
               this.indexManager
             );

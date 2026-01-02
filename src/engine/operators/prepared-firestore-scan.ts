@@ -1,9 +1,9 @@
 import * as admin from 'firebase-admin';
-import { and, constant } from '../../api/api';
 import { Expression, Field, Predicate } from '../../api/expression';
-import { Constraint, ExecutionNode, FilterNode, NodeType, ScanNode } from '../ast';
+import { Constraint, ExecutionNode, NodeType, PreparedScanNode, ScanNode } from '../ast';
 import { evaluate, evaluatePredicate } from '../evaluator';
 import { buildFirestoreQuery, FirestoreOrderBy, FirestoreWhereConstraint, getDocData } from '../utils/firestore-utils';
+import { Operator, SortOrder } from './operator';
 
 export interface PreparedFirestoreScanPlan {
   scan: ScanNode;
@@ -11,11 +11,15 @@ export interface PreparedFirestoreScanPlan {
    * Full right-side predicate to apply post-fetch for correctness.
    * This includes non-indexable FilterNode predicates if present.
    */
-  postFilter: Predicate;
+  postFilter?: Predicate;
   /**
    * Raw ScanNode constraints to be compiled with parameters at execution time.
    */
   baseConstraints: Constraint[];
+  driver?: {
+    fieldPath: string;
+    op: admin.firestore.WhereFilterOp;
+  };
 }
 
 export interface PreparedFirestoreCursorOptions {
@@ -28,41 +32,20 @@ export interface PreparedFirestoreCursorOptions {
   includeScanLimitOffset?: boolean;
 }
 
-export class PreparedFirestoreCursor {
-  private iterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot>;
+export class PreparedFirestoreScan implements Operator {
+  readonly plan: PreparedFirestoreScanPlan;
+
+  private iterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot> | null = null;
   private exhausted = false;
 
-  constructor(
-    private plan: PreparedFirestoreScanPlan,
-    query: admin.firestore.Query,
-    private parameters: Record<string, any>
-  ) {
-    const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
-    this.iterator = stream[Symbol.asyncIterator]();
-  }
+  private driverField?: string;
+  private driverOp?: admin.firestore.WhereFilterOp;
 
-  async next(): Promise<any | null> {
-    if (this.exhausted) return null;
-
-    while (true) {
-      const { value, done } = await this.iterator.next();
-      if (done || !value) {
-        this.exhausted = true;
-        return null;
-      }
-
-      const row = { [this.plan.scan.alias]: getDocData(value) };
-      if (!evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
-        continue;
-      }
-
-      return row;
-    }
-  }
-}
-
-export class PreparedFirestoreScan {
-  readonly plan: PreparedFirestoreScanPlan;
+  private cursorOpts: PreparedFirestoreCursorOptions = {
+    includeBaseWhere: true,
+    includeScanOrderBy: false,
+    includeScanLimitOffset: false,
+  };
 
   constructor(
     private db: admin.firestore.Firestore,
@@ -70,9 +53,91 @@ export class PreparedFirestoreScan {
     private parameters: Record<string, any>
   ) {
     this.plan = prepareFirestoreScanPlan(node);
+
+    if (this.plan.driver) {
+      this.driverField = this.plan.driver.fieldPath;
+      this.driverOp = this.plan.driver.op;
+    }
   }
 
-  createCursor(opts?: PreparedFirestoreCursorOptions): PreparedFirestoreCursor {
+  setOptions(opts: Partial<PreparedFirestoreCursorOptions>) {
+    this.cursorOpts = { ...this.cursorOpts, ...opts };
+  }
+
+  getSortOrder(): SortOrder | undefined {
+    // Prepared scan generally returns data in the order of the underlying scan,
+    // unless overridden by specific index lookups or explicitly sorted.
+    // For now, assume it preserves the scan's order.
+    const orderBy = this.plan.scan.orderBy;
+    if (orderBy && orderBy.length > 0) {
+      const first = orderBy[0];
+      if (first.field.kind === 'Field') {
+        return {
+          field: (first.field as Field).path.join('.'),
+          direction: first.direction,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  async next(drivingValue?: any): Promise<any | null> {
+    // If a driving value is provided, we restart the scan with this value
+    if (drivingValue !== undefined) {
+      this.startScan(drivingValue);
+    } else if (this.iterator === null && !this.exhausted) {
+      this.startScan(undefined);
+    }
+
+    if (!this.iterator || this.exhausted) {
+      return null;
+    }
+
+    while (true) {
+      const { value, done } = await this.iterator.next();
+      if (done || !value) {
+        this.exhausted = true;
+        this.iterator = null;
+        return null;
+      }
+
+      const row = { [this.plan.scan.alias]: getDocData(value) };
+      if (this.plan.postFilter && !evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
+        continue;
+      }
+
+      return row;
+    }
+  }
+
+  private startScan(drivingValue: any) {
+    const extraWhere: FirestoreWhereConstraint[] = [];
+
+    if (this.driverField && this.driverOp) {
+      extraWhere.push({
+        fieldPath: this.driverField,
+        op: this.driverOp,
+        value: drivingValue,
+      });
+    }
+
+    // Merge driver extraWhere with configured options
+    const finalOpts: PreparedFirestoreCursorOptions = {
+      ...this.cursorOpts,
+      extraWhere: [
+        ...this.cursorOpts.extraWhere ?? [],
+        ...extraWhere,
+      ],
+    };
+
+    const query = this.buildQuery(finalOpts);
+    const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
+    this.iterator = stream[Symbol.asyncIterator]();
+    this.exhausted = false;
+  }
+
+  // Helper to build query (extracted from previous createCursor logic)
+  private buildQuery(opts: PreparedFirestoreCursorOptions): admin.firestore.Query {
     const {
       extraWhere = [],
       includeBaseWhere = true,
@@ -81,7 +146,7 @@ export class PreparedFirestoreScan {
       limit,
       offset,
       includeScanLimitOffset = false,
-    } = opts ?? {};
+    } = opts;
 
     const scan = this.plan.scan;
     const baseWhere = compileConstraints(this.plan.baseConstraints, this.parameters);
@@ -112,7 +177,7 @@ export class PreparedFirestoreScan {
     const resolvedOffset = offset ?? (includeScanLimitOffset ? scan.offset : undefined);
     const resolvedLimit = limit ?? (includeScanLimitOffset ? scan.limit : undefined);
 
-    const query = buildFirestoreQuery(this.db, {
+    return buildFirestoreQuery(this.db, {
       collectionPath: scan.collectionPath,
       collectionGroup: scan.collectionGroup,
       where,
@@ -120,35 +185,29 @@ export class PreparedFirestoreScan {
       offset: resolvedOffset,
       limit: resolvedLimit,
     });
-
-    return new PreparedFirestoreCursor(this.plan, query, this.parameters);
   }
 }
 
 export function prepareFirestoreScanPlan(node: ExecutionNode): PreparedFirestoreScanPlan {
+  if (node.type === NodeType.PREPARED_SCAN) {
+    const p = node as PreparedScanNode;
+    return {
+      scan: p.scan,
+      postFilter: p.postFilter,
+      baseConstraints: p.baseConstraints,
+      driver: p.driver,
+    };
+  }
+
   if (node.type === NodeType.SCAN) {
     const scan = node as ScanNode;
     return {
       scan,
-      postFilter: predicateFromConstraints(scan.constraints),
       baseConstraints: scan.constraints,
     };
   }
 
-  if (node.type === NodeType.FILTER) {
-    const filter = node as FilterNode;
-    if (filter.source.type !== NodeType.SCAN) {
-      throw new Error('PreparedFirestoreScan currently supports FILTER over SCAN only.');
-    }
-    const scan = filter.source as ScanNode;
-    return {
-      scan,
-      postFilter: filter.predicate,
-      baseConstraints: scan.constraints,
-    };
-  }
-
-  throw new Error('PreparedFirestoreScan currently supports SCAN or FILTER->SCAN only.');
+  throw new Error('PreparedFirestoreScan currently supports PREPARED_SCAN or SCAN only.');
 }
 
 function compileConstraints(constraints: Constraint[], parameters: Record<string, any>): FirestoreWhereConstraint[] {
@@ -158,17 +217,6 @@ function compileConstraints(constraints: Constraint[], parameters: Record<string
     op: c.op,
     value: Array.isArray(c.value) ? c.value.map(resolveValue) : resolveValue(c.value),
   }));
-}
-
-function predicateFromConstraints(constraints: Constraint[]): Predicate {
-  if (!constraints.length) return constant(true);
-  const conditions: Predicate[] = constraints.map(c => ({
-    type: 'COMPARISON',
-    left: c.field,
-    operation: c.op,
-    right: c.value,
-  }));
-  return conditions.length === 1 ? conditions[0] : and(conditions);
 }
 
 function isMembershipConstraint(constraint: FirestoreWhereConstraint): boolean {

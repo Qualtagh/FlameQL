@@ -5,19 +5,12 @@ import { ScanNode } from '../ast';
 import { IndexManager } from '../indexes/index-manager';
 import { invertComparisonOp } from './operation-comparator';
 
-export type IndexedNestedLoopLookupPlan =
-  | {
-    mode: 'batch';
-    lookupOp: 'in' | 'array-contains-any';
-    leftExpr: Expression;
-    rightField: Field;
-  }
-  | {
-    mode: 'perRow';
-    lookupOp: WhereFilterOp;
-    leftExpr: Expression;
-    rightField: Field;
-  };
+export type IndexedNestedLoopLookupPlan = {
+  mode: 'batch' | 'perRow';
+  lookupOp: WhereFilterOp;
+  leftExpr: Expression;
+  rightField: Field;
+};
 
 export function collectConjunctiveComparisons(predicate: Predicate): ComparisonPredicate[] {
   switch (predicate.type) {

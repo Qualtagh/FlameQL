@@ -10,6 +10,7 @@ export enum NodeType {
   UNION = 'UNION',
   SORT = 'SORT',
   LIMIT = 'LIMIT',
+  PREPARED_SCAN = 'PREPARED_SCAN',
 }
 
 export interface ExecutionNode {
@@ -33,6 +34,17 @@ export interface ScanNode extends ExecutionNode {
   offset?: number;
 }
 
+export interface PreparedScanNode extends ExecutionNode {
+  type: NodeType.PREPARED_SCAN;
+  scan: ScanNode;
+  postFilter?: Predicate;
+  baseConstraints: Constraint[];
+  driver?: {
+    fieldPath: string;
+    op: WhereFilterOp;
+  };
+}
+
 export interface FilterNode extends ExecutionNode {
   type: NodeType.FILTER;
   source: ExecutionNode;
@@ -52,6 +64,13 @@ export interface JoinNode extends ExecutionNode {
   joinType: JoinStrategy;
   condition: Predicate;
   crossProduct?: boolean;
+}
+
+export interface IndexedNestedLoopJoinNode extends JoinNode {
+  indexJoin: {
+    leftExpr: Expression;
+    mode: 'batch' | 'perRow';
+  };
 }
 
 export interface AggregateNode extends ExecutionNode {
@@ -89,6 +108,9 @@ export interface LimitNode extends ExecutionNode {
 export function getExecutionNodeChildren(node: ExecutionNode): ExecutionNode[] {
   switch (node.type) {
     case NodeType.SCAN:
+      return [];
+    case NodeType.PREPARED_SCAN:
+      // PreparedScanNode wraps a ScanNode, but effectively it's a leaf in execution terms.
       return [];
     case NodeType.FILTER:
       return [(node as FilterNode).source];

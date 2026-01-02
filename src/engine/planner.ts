@@ -1,10 +1,10 @@
 import { and, constant, eq, gte, JoinStrategy, literal, lt, not, or, PredicateMode, PredicateOrMode } from '../api/api';
 import { Collection, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
-import { Constraint, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
+import { Constraint, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
 import { IndexManager } from './indexes/index-manager';
 import { SortOrder } from './operators/operator';
 import { PredicateSplitter } from './predicate-splitter';
-import { pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
+import { IndexedNestedLoopLookupPlan, pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
 import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
 import { orderBySpecsEqual, simplifyPredicate, toDNF } from './utils/predicate-utils';
 import { nextLexicographicString } from './utils/string-utils';
@@ -576,7 +576,7 @@ export class Planner {
         condition: simplifyPredicate(orientedCondition),
         crossProduct: relevant.length === 0,
       };
-
+      this.resolveIndexedNestedLoopJoin(joinNode, hint);
       root = joinNode;
       joined.add(alias);
     }
@@ -1126,4 +1126,61 @@ export class Planner {
       return !!this.asField(c.left) && !!this.asField(c.right);
     });
   }
+
+  private resolveIndexedNestedLoopJoin(joinNode: JoinNode, hint: JoinStrategy): void {
+    if (joinNode.joinType !== JoinStrategy.IndexedNestedLoop) {
+      return;
+    }
+    const scan = this.findUnderlyingScan(joinNode.right);
+    if (!scan) {
+      throw new Error('Indexed Nested Loop Join requires a ScanNode on the right side.');
+    }
+
+    const lookupPlan = pickIndexedNestedLoopLookupPlan(joinNode.condition, scan, this.indexManager, {
+      requireIndex: hint === JoinStrategy.Auto,
+    });
+
+    if (!lookupPlan) {
+      throw new Error('Could not determine valid Indexed Nested Loop Join lookup plan.');
+    }
+
+    (joinNode as IndexedNestedLoopJoinNode).indexJoin = {
+      leftExpr: lookupPlan.leftExpr,
+      mode: lookupPlan.mode,
+    };
+
+    joinNode.right = this.createPreparedScanNode(joinNode.right, lookupPlan);
+  }
+
+  private createPreparedScanNode(node: ExecutionNode, plan?: IndexedNestedLoopLookupPlan): PreparedScanNode {
+    const driver = plan ? { fieldPath: plan.rightField.path.join('.'), op: plan.lookupOp } : undefined;
+
+    if (node.type === NodeType.SCAN) {
+      const scan = node as ScanNode;
+      return {
+        type: NodeType.PREPARED_SCAN,
+        scan,
+        baseConstraints: scan.constraints,
+        driver,
+      };
+    }
+
+    if (node.type === NodeType.FILTER) {
+      const filter = node as FilterNode;
+      const scan = this.findUnderlyingScan(filter);
+      if (!scan) {
+        throw new Error('Indexed Nested Loop Join requires a ScanNode on the right side.');
+      }
+      return {
+        type: NodeType.PREPARED_SCAN,
+        scan,
+        postFilter: filter.predicate,
+        baseConstraints: scan.constraints,
+        driver,
+      };
+    }
+
+    throw new Error(`Unsupported node type for Indexed Nested Loop Join right side: ${node.type}`);
+  }
+
 }

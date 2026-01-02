@@ -1,5 +1,5 @@
 import { ComparisonPredicate, JoinStrategy } from '../../api/expression';
-import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
+import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
 import { align, indent, toCamelCase } from '../utils/string-utils';
 import { generateExpressionCode, generateExpressionSelector, generatePredicateCode } from './expression-codegen';
 
@@ -84,6 +84,8 @@ class CodeGenContext {
         return this.generateLimit(node as LimitNode);
       case NodeType.AGGREGATE:
         return this.generateAggregate(node as AggregateNode);
+      case NodeType.PREPARED_SCAN:
+        return this.generatePreparedScan(node as PreparedScanNode);
       default:
         throw new Error(`Unsupported node type: ${node.type}`);
     }
@@ -363,5 +365,31 @@ class CodeGenContext {
     // Not fully specified in plan, but required for completeness.
     // Aggregation usually consumes all rows and yields one or more result rows.
     throw new Error('Aggregate code generation not yet implemented');
+  }
+
+  private generatePreparedScan(node: PreparedScanNode): string {
+    // In code generation, we treat Prepared Scan as a Scan + optional Filter.
+    // The efficient parameterization of INLJ is not yet implemented in codegen (it falls back to Nested Loop).
+    const scanName = this.generateScan(node.scan);
+
+    if (!node.postFilter || node.postFilter.type === 'CONSTANT' && node.postFilter.value === true) {
+      return scanName;
+    }
+
+    const name = this.nextName('filter');
+    const predicateCode = generatePredicateCode(node.postFilter);
+
+    const body = align`
+      async function* ${name}() {
+        for await (const row of ${scanName}()) {
+          if (${predicateCode}) {
+            yield row;
+          }
+        }
+      }
+    `;
+
+    this.addDefinition(indent(body, 2));
+    return name;
   }
 }

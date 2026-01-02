@@ -7,6 +7,7 @@ export * from './limit';
 export * from './merge-join';
 export * from './nested-loop-join';
 export * from './operator';
+export * from './prepared-firestore-scan';
 export * from './project';
 export * from './sort';
 export * from './union';

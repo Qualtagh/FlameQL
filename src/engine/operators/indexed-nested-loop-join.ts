@@ -1,9 +1,10 @@
 import admin from 'firebase-admin';
-import { ExecutionNode, JoinNode } from '../ast';
+import { Field } from '../../api/expression';
+import { IndexedNestedLoopJoinNode } from '../ast';
 import { evaluate, evaluatePredicate, getValueFromField } from '../evaluator';
 import { IndexManager } from '../indexes/index-manager';
 import { DOC_PATH } from '../symbols';
-import { chunkArray, IndexedNestedLoopLookupPlan, pickIndexedNestedLoopLookupPlan, serializeKey, uniqueNonNull } from '../utils/indexed-nested-loop-utils';
+import { chunkArray, IndexedNestedLoopLookupPlan, serializeKey, uniqueNonNull } from '../utils/indexed-nested-loop-utils';
 import { maxPerOperation } from '../utils/predicate-utils';
 import { Operator, SortOrder } from './operator';
 import { PreparedFirestoreScan } from './prepared-firestore-scan';
@@ -39,22 +40,24 @@ export class IndexedNestedLoopJoinOperator implements Operator {
   constructor(
     private db: admin.firestore.Firestore,
     private leftSource: Operator,
-    rightPlan: ExecutionNode,
-    private joinNode: JoinNode,
+    rightSource: Operator,
+    private joinNode: IndexedNestedLoopJoinNode,
     private parameters: Record<string, any>,
     private indexManager?: IndexManager
   ) {
-    this.rightPrepared = new PreparedFirestoreScan(db, rightPlan, parameters);
-    const driver = pickIndexedNestedLoopLookupPlan(
-      joinNode.condition,
-      this.rightPrepared.plan.scan,
-      this.indexManager,
-      { requireIndex: false }
-    );
-    if (!driver) {
-      throw new Error('Indexed nested-loop join requires a conjunctive join predicate with at least one Field-vs-Field comparison.');
+    if (!(rightSource instanceof PreparedFirestoreScan)) {
+      throw new Error('Indexed nested-loop join requires a PreparedFirestoreScan operator on the right side.');
     }
-    this.driver = driver;
+    this.rightPrepared = rightSource;
+
+    // Use pre-calculated plan from planner
+    const alias = this.rightPrepared.plan.scan.alias;
+    this.driver = {
+      mode: joinNode.indexJoin.mode,
+      leftExpr: joinNode.indexJoin.leftExpr,
+      rightField: new Field(alias, this.rightPrepared.plan.driver!.fieldPath.split('.')),
+      lookupOp: this.rightPrepared.plan.driver!.op,
+    };
   }
 
   async next(): Promise<any | null> {
@@ -195,21 +198,10 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     if (values.length === 0) return true;
 
     // Fetch right rows for this batch via the prepared scan.
-    const cursor = this.rightPrepared.createCursor({
-      includeBaseWhere: true,
-      includeScanOrderBy: false,
-      includeScanLimitOffset: false,
-      extraWhere: [{
-        fieldPath: this.driver.rightField.path.join('.'),
-        op: this.driver.lookupOp,
-        value: values,
-      }],
-    });
-
-    while (true) {
-      const rightRow = await cursor.next();
-      if (!rightRow) break;
+    let rightRow = await this.rightPrepared.next(values);
+    while (rightRow) {
       this.indexRightRow(rightRow);
+      rightRow = await this.rightPrepared.next();
     }
 
     return true;
@@ -241,9 +233,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
   }
 
   private async fetchRightForPerRow(leftVal: any): Promise<any[]> {
-    const fieldPath = this.driver.rightField.path.join('.');
-    const op = this.driver.lookupOp;
-    const max = maxPerOperation(op);
+    const max = maxPerOperation(this.driver.lookupOp);
 
     // Ops that require an ARRAY constant.
     if (max > 1) {
@@ -256,24 +246,16 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       const out: any[] = [];
 
       for (const chunk of chunkArray(unique, max)) {
-        const cursor = this.rightPrepared.createCursor({
-          includeBaseWhere: true,
-          includeScanOrderBy: false,
-          includeScanLimitOffset: false,
-          extraWhere: [{ fieldPath, op, value: chunk }],
-        });
-
-        while (true) {
-          const row = await cursor.next();
-          if (!row) break;
+        let row = await this.rightPrepared.next(chunk);
+        while (row) {
           const path = row?.[alias]?.[DOC_PATH] as string | undefined;
           if (!path) {
             out.push(row);
-            continue;
+          } else if (!seen.has(path)) {
+            seen.add(path);
+            out.push(row);
           }
-          if (seen.has(path)) continue;
-          seen.add(path);
-          out.push(row);
+          row = await this.rightPrepared.next();
         }
       }
 
@@ -283,18 +265,11 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     // Scalar ops.
     if (leftVal === undefined || leftVal === null) return [];
 
-    const cursor = this.rightPrepared.createCursor({
-      includeBaseWhere: true,
-      includeScanOrderBy: false,
-      includeScanLimitOffset: false,
-      extraWhere: [{ fieldPath, op, value: leftVal }],
-    });
-
+    let row = await this.rightPrepared.next(leftVal);
     const out: any[] = [];
-    while (true) {
-      const row = await cursor.next();
-      if (!row) break;
+    while (row) {
       out.push(row);
+      row = await this.rightPrepared.next();
     }
     return out;
   }

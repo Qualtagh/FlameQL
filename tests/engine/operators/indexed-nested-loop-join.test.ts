@@ -1,5 +1,5 @@
 import { and, collection, eq, field, gt, JoinStrategy, literal, or, PredicateMode, projection } from '../../../src/api/api';
-import { JoinNode, NodeType, ProjectNode } from '../../../src/engine/ast';
+import { IndexedNestedLoopJoinNode, NodeType, PreparedScanNode, ProjectNode } from '../../../src/engine/ast';
 import { Executor } from '../../../src/engine/executor';
 import { IndexManager } from '../../../src/engine/indexes/index-manager';
 import { Planner } from '../../../src/engine/planner';
@@ -7,8 +7,19 @@ import { executeTest } from '../../helpers/test-utils';
 import { clearDatabase, db } from '../../setup';
 
 describe('IndexedNestedLoopJoinOperator', () => {
+  let indexManager: IndexManager;
+
   beforeEach(async () => {
     await clearDatabase();
+    indexManager = new IndexManager();
+    // Configure indexes required for INLJ.
+    // 'orders' collection needs indexes on fields used for joining.
+    indexManager.loadFromFirestoreJson(JSON.stringify({
+      indexes: [
+        { collectionGroup: 'orders', queryScope: 'COLLECTION', fields: [{ fieldPath: 'userId', order: 'ASCENDING' }] },
+        { collectionGroup: 'orders', queryScope: 'COLLECTION', fields: [{ fieldPath: 'region', order: 'ASCENDING' }] },
+      ],
+    }));
   });
 
   it('batches Firestore lookups using `in` (splits into multiple queries when left has many unique keys)', async () => {
@@ -22,17 +33,21 @@ describe('IndexedNestedLoopJoinOperator', () => {
       id: 'inlj-batching',
       from: { u: collection('users'), o: collection('orders') },
       select: { uId: field('u.id'), oTotal: field('o.total') },
+      where: eq(field('u.id'), field('o.userId')),
+      hints: { join: JoinStrategy.IndexedNestedLoop },
     });
 
-    const planner = new Planner();
+    const planner = new Planner(indexManager);
     const plan = planner.plan(p) as ProjectNode;
-    const joinNode = plan.source as JoinNode;
+    const joinNode = plan.source as IndexedNestedLoopJoinNode;
 
-    // Force indexed nested loop join on equality predicate.
-    joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = eq(field('u.id'), field('o.userId'));
+    expect(joinNode.type).toBe(NodeType.JOIN);
+    expect(joinNode.joinType).toBe(JoinStrategy.IndexedNestedLoop);
+    expect(joinNode.right.type).toBe(NodeType.PREPARED_SCAN);
+    expect(joinNode.indexJoin).toBeDefined();
+    expect(joinNode.indexJoin.mode).toBe('batch');
 
-    const executor = new Executor(db);
+    const executor = new Executor(db, indexManager);
     const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(31);
@@ -48,30 +63,37 @@ describe('IndexedNestedLoopJoinOperator', () => {
     await db.collection('orders').doc('o2').set({ userId: 1, status: 'open', total: 20 });
     await db.collection('orders').doc('o3').set({ userId: 2, status: 'refunded', total: 30 });
 
-    // Force planner to keep OR as a FilterNode (no UNION rewrite) so the RIGHT input becomes FILTER->SCAN.
     const p = projection({
       id: 'inlj-right-filter',
       from: { u: collection('users'), o: collection('orders') },
       where: and([
         eq(field('u.active'), literal(true)),
+        eq(field('u.id'), field('o.userId')),
         or([
           eq(field('o.status'), literal('paid')),
-          eq(field('o.status'), literal('refunded')),
+          gt(field('o.total'), literal(25)),
         ]),
       ]),
       select: { uId: field('u.id'), oStatus: field('o.status') },
-      hints: { predicateMode: PredicateMode.Respect },
+      hints: {
+        join: JoinStrategy.IndexedNestedLoop,
+        predicateMode: PredicateMode.Respect,
+      },
     });
 
-    const planner = new Planner();
+    const planner = new Planner(indexManager);
     const plan = planner.plan(p) as ProjectNode;
 
-    // The plan is PROJECT over either JOIN or FILTER->JOIN depending on planner; find the join.
-    const joinNode = (plan.source.type === NodeType.JOIN ? plan.source : (plan.source as any).source) as JoinNode;
-    joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = eq(field('u.id'), field('o.userId'));
+    // Verify the plan structure: Join -> Right is PREPARED_SCAN wrapping Filter -> Scan
+    const joinNode = (plan.source.type === NodeType.JOIN ? plan.source : (plan.source as any).source) as IndexedNestedLoopJoinNode;
+    // console.log('DEBUG: joinNode.right', JSON.stringify(joinNode.right, null, 2));
+    expect(joinNode.joinType).toBe(JoinStrategy.IndexedNestedLoop);
+    expect(joinNode.right.type).toBe(NodeType.PREPARED_SCAN);
 
-    const executor = new Executor(db);
+    const prepared = joinNode.right as PreparedScanNode;
+    expect(prepared.postFilter).toBeDefined(); // The OR predicate should be here
+
+    const executor = new Executor(db, indexManager);
     const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(2);
@@ -80,14 +102,6 @@ describe('IndexedNestedLoopJoinOperator', () => {
   });
 
   it('is selected automatically (AUTO) when hash/merge are not chosen and a right-side index exists', async () => {
-    // Indexes: right-side lookup field is indexed (required for auto selection).
-    const indexManager = new IndexManager();
-    indexManager.loadFromFirestoreJson(JSON.stringify({
-      indexes: [
-        { collectionGroup: 'orders', queryScope: 'COLLECTION', fields: [{ fieldPath: 'userId' }] },
-      ],
-    }));
-
     await db.collection('users').doc('1').set({ id: 1, region: 'US' });
     await db.collection('users').doc('2').set({ id: 2, region: 'EU' });
 
@@ -109,9 +123,11 @@ describe('IndexedNestedLoopJoinOperator', () => {
 
     const planner = new Planner(indexManager);
     const plan = planner.plan(p) as ProjectNode;
-    const joinNode = plan.source as JoinNode;
+    const joinNode = plan.source as IndexedNestedLoopJoinNode;
 
     expect(joinNode.joinType).toBe(JoinStrategy.IndexedNestedLoop);
+    expect(joinNode.right.type).toBe(NodeType.PREPARED_SCAN);
+    expect(joinNode.indexJoin).toBeDefined();
 
     const executor = new Executor(db, indexManager);
     const results = await executeTest(executor, plan, {});
@@ -134,16 +150,19 @@ describe('IndexedNestedLoopJoinOperator', () => {
       id: 'inlj-ineq',
       from: { u: collection('users'), o: collection('orders') },
       select: { uId: field('u.id'), oUserId: field('o.userId') },
+      where: gt(field('u.id'), field('o.userId')),
+      hints: { join: JoinStrategy.IndexedNestedLoop },
     });
 
-    const planner = new Planner();
+    const planner = new Planner(indexManager);
     const plan = planner.plan(p) as ProjectNode;
-    const joinNode = plan.source as JoinNode;
+    const joinNode = plan.source as IndexedNestedLoopJoinNode;
 
-    joinNode.joinType = JoinStrategy.IndexedNestedLoop;
-    joinNode.condition = gt(field('u.id'), field('o.userId'));
+    expect(joinNode.joinType).toBe(JoinStrategy.IndexedNestedLoop);
+    expect(joinNode.right.type).toBe(NodeType.PREPARED_SCAN);
+    expect(joinNode.indexJoin.mode).toBe('perRow');
 
-    const executor = new Executor(db);
+    const executor = new Executor(db, indexManager);
     const results = await executeTest(executor, plan, {});
 
     expect(results).toHaveLength(3);
