@@ -32,7 +32,7 @@ describe('planToCode', () => {
         db: Firestore,
         params: Record<string, any>
       ): Promise<any[]> {
-        async function* scan_o() {
+        async function* scan_o_0() {
           let query: FirebaseFirestore.Query = db.collection('orders');
           query = query.where('status', '==', 'active');
           for await (const doc of query.stream()) {
@@ -40,7 +40,7 @@ describe('planToCode', () => {
           }
         }
 
-        async function* scan_u() {
+        async function* scan_u_0() {
           let query: FirebaseFirestore.Query = db.collection('users');
           query = query.where('age', '>=', 18);
           for await (const doc of query.stream()) {
@@ -51,18 +51,17 @@ describe('planToCode', () => {
         async function* join_0() {
           const hashTable = new JoinHashTable('==');
 
-          for await (const row of scan_u()) {
+          for await (const row of scan_u_0()) {
             const key = getValue(row.u, ['#id']);
             hashTable.add(key, row);
           }
 
-          for await (const row of scan_o()) {
+          for await (const row of scan_o_0()) {
             const probeValue = getValue(row.o, ['userId']);
             const matches = hashTable.get(probeValue);
-            if (matches) {
-              for (const match of matches) {
-                yield { ...row, ...match };
-              }
+            if (!matches) continue;
+            for (const match of matches) {
+              yield { ...row, ...match };
             }
           }
         }

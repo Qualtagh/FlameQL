@@ -22,7 +22,7 @@ describe('IndexedNestedLoopJoinOperator', () => {
     }));
   });
 
-  it('batches Firestore lookups using `in` (splits into multiple queries when left has many unique keys)', async () => {
+  it('batches Firestore lookups using "in" (splits into multiple queries when left has many unique keys)', async () => {
     // Seed users + orders with 31 unique join keys (must be batched due to Firestore `in` limit).
     for (let i = 1; i <= 31; i++) {
       await db.collection('users').doc(String(i)).set({ id: i, name: `u${i}` });

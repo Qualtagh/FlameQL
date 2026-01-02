@@ -198,7 +198,7 @@ describe('NestedLoopJoinOperator', () => {
     expect(results).toContainEqual({ tStatus: 'pending', rAllowed: ['active', 'pending'] });
   });
 
-  it('should join on nested field `price.currency`', async () => {
+  it('should join on nested field "price.currency"', async () => {
     await db.collection('products').doc('prod1').set({ price: { value: 20, currency: 'USD' } });
     await db.collection('products').doc('prod2').set({ price: { value: 15, currency: 'EUR' } });
 

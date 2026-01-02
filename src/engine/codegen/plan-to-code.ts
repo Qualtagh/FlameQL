@@ -1,5 +1,5 @@
 import { ComparisonPredicate, JoinStrategy } from '../../api/expression';
-import { AggregateNode, ExecutionNode, FilterNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
+import { AggregateNode, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
 import { align, indent, toCamelCase } from '../utils/string-utils';
 import { generateExpressionCode, generateExpressionSelector, generatePredicateCode } from './expression-codegen';
 
@@ -102,10 +102,25 @@ class CodeGenContext {
   }
 
   private generateScan(node: ScanNode): string {
-    const name = `scan_${node.alias.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    const method = node.collectionGroup ? 'collectionGroup' : 'collection';
+    return this.generatePreparedScanImplementation(node, undefined, undefined);
+  }
 
-    const constraints = (node.constraints ?? [])
+  private generatePreparedScan(node: PreparedScanNode): string {
+    return this.generatePreparedScanImplementation(node.scan, node.driver, node.postFilter);
+  }
+
+  /**
+   * Generates a reusable Firestore scan function that supports parameterized execution (INLJ).
+   */
+  private generatePreparedScanImplementation(
+    scan: ScanNode,
+    driver?: { fieldPath: string; op: string },
+    postFilter?: PreparedScanNode['postFilter']
+  ): string {
+    const name = this.nextName(`scan_${scan.alias.replace(/[^a-zA-Z0-9]/g, '_')}`);
+    const method = scan.collectionGroup ? 'collectionGroup' : 'collection';
+
+    const constraints = (scan.constraints ?? [])
       .map(c => {
         const fieldPath = c.field.path.join('.');
         const valueCode = Array.isArray(c.value)
@@ -115,7 +130,7 @@ class CodeGenContext {
       })
       .join('\n');
 
-    const orderBy = (node.orderBy ?? [])
+    const orderBy = (scan.orderBy ?? [])
       .map(order => {
         if (order.field.kind !== 'Field') return '';
         const fieldPath = order.field.path.join('.');
@@ -124,17 +139,39 @@ class CodeGenContext {
       .filter(Boolean)
       .join('\n');
 
-    const limit = node.limit !== undefined ? `query = query.limit(${node.limit});` : '';
-    const offset = node.offset !== undefined ? `query = query.offset(${node.offset});` : '';
-    const middle = [constraints, orderBy, limit, offset].filter(Boolean).join('\n');
-    const alias = /[^a-zA-Z0-9]/.test(node.alias) ? `'${node.alias.replace(/'/g, '\\\'')}'` : node.alias;
+    const limit = scan.limit !== undefined ? `query = query.limit(${scan.limit});` : '';
+    const offset = scan.offset !== undefined ? `query = query.offset(${scan.offset});` : '';
 
+    let middle = [constraints, orderBy, limit, offset].filter(Boolean).join('\n');
+
+    // Inject driver logic
+    if (driver) {
+      const driverLogic = align`
+        if (drivingValue !== undefined) {
+          query = query.where('${driver.fieldPath}', '${driver.op}', drivingValue);
+        }
+      `;
+      middle = `${middle}\n${driverLogic}`;
+    }
+
+    const alias = /[^a-zA-Z0-9]/.test(scan.alias) ? `'${scan.alias.replace(/'/g, '\\\'')}'` : scan.alias;
+    const postFilterCode = postFilter && (postFilter.type !== 'CONSTANT' || !postFilter.value)
+      ? `if (!(${generatePredicateCode(postFilter)})) continue;`
+      : '';
+    const row = `{ ${alias}: getDocData(doc) }`;
+    const yieldRow = postFilterCode ? align`
+      const row = ${row};
+      ${postFilterCode}
+      yield row;
+    ` : `yield ${row};`;
+
+    const args = driver ? 'drivingValue?: any' : '';
     const body = align`
-      async function* ${name}() {
-        let query: FirebaseFirestore.Query = db.${method}('${node.collectionPath}');
+      async function* ${name}(${args}) {
+        let query: FirebaseFirestore.Query = db.${method}('${scan.collectionPath}');
         ${middle}
         for await (const doc of query.stream()) {
-          yield { ${alias}: getDocData(doc) };
+          ${yieldRow}
         }
       }
     `;
@@ -203,28 +240,30 @@ class CodeGenContext {
           for await (const leftRow of ${leftName}()) {
             for (const rightRow of rightBuffer) {
               const row = { ...leftRow, ...rightRow };
-              if (${conditionCode}) {
-                yield row;
-              }
+              if (!(${conditionCode})) continue;
+              yield row;
             }
           }
         }
       `;
     } else if (node.joinType === JoinStrategy.IndexedNestedLoop) {
+      const indexJoin = (node as IndexedNestedLoopJoinNode).indexJoin;
+      const leftExprCode = generateExpressionCode(indexJoin.leftExpr);
+      const drivingValueExpr = indexJoin.mode === 'batch' ? '[lookupValue]' : 'lookupValue';
+
       body = align`
         async function* ${name}() {
-          // WARNING: Join strategy '${node.joinType}' handled as Nested Loop for code generation simplicity.
-          const rightBuffer: any[] = [];
-          for await (const row of ${rightName}()) {
-            rightBuffer.push(row);
-          }
-
           for await (const leftRow of ${leftName}()) {
-            for (const rightRow of rightBuffer) {
+            const row = leftRow;
+            const lookupValue = ${leftExprCode};
+
+            // Note: Batch mode handling is simplified here to per-row for code generation.
+            // A production-grade code generator would handle batching similarly to the interpreter.
+            if (lookupValue === undefined || lookupValue === null) continue;
+            for await (const rightRow of ${rightName}(${drivingValueExpr})) {
               const row = { ...leftRow, ...rightRow };
-              if (${conditionCode}) {
-                yield row;
-              }
+              if (!(${conditionCode})) continue;
+              yield row;
             }
           }
         }
@@ -253,10 +292,9 @@ class CodeGenContext {
           for await (const row of ${leftName}()) {
             const probeValue = ${leftCode};
             const matches = hashTable.get(probeValue);
-            if (matches) {
-              for (const match of matches) {
-                yield { ...row, ...match };
-              }
+            if (!matches) continue;
+            for (const match of matches) {
+              yield { ...row, ...match };
             }
           }
         }
@@ -273,9 +311,8 @@ class CodeGenContext {
           for await (const leftRow of ${leftName}()) {
             for (const rightRow of rightBuffer) {
               const row = { ...leftRow, ...rightRow };
-              if (${conditionCode}) {
-                yield row;
-              }
+              if (!(${conditionCode})) continue;
+              yield row;
             }
           }
         }
@@ -365,31 +402,5 @@ class CodeGenContext {
     // Not fully specified in plan, but required for completeness.
     // Aggregation usually consumes all rows and yields one or more result rows.
     throw new Error('Aggregate code generation not yet implemented');
-  }
-
-  private generatePreparedScan(node: PreparedScanNode): string {
-    // In code generation, we treat Prepared Scan as a Scan + optional Filter.
-    // The efficient parameterization of INLJ is not yet implemented in codegen (it falls back to Nested Loop).
-    const scanName = this.generateScan(node.scan);
-
-    if (!node.postFilter || node.postFilter.type === 'CONSTANT' && node.postFilter.value === true) {
-      return scanName;
-    }
-
-    const name = this.nextName('filter');
-    const predicateCode = generatePredicateCode(node.postFilter);
-
-    const body = align`
-      async function* ${name}() {
-        for await (const row of ${scanName}()) {
-          if (${predicateCode}) {
-            yield row;
-          }
-        }
-      }
-    `;
-
-    this.addDefinition(indent(body, 2));
-    return name;
   }
 }
