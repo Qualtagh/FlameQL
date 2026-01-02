@@ -2,12 +2,12 @@ import { ProjectNode } from '../ast';
 import { evaluate } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
-export class Project implements Operator {
+export class Project extends Operator {
   constructor(
     private source: Operator,
     private node: ProjectNode,
     private parameters: Record<string, any>
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     const row = await this.source.next();

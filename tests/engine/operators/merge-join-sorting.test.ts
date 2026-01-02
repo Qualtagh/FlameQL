@@ -1,14 +1,15 @@
 import { eq, field, JoinStrategy } from '../../../src/api/api';
 import { JoinNode, NodeType } from '../../../src/engine/ast';
 import { MergeJoinOperator } from '../../../src/engine/operators/merge-join';
-import type { Operator, SortOrder } from '../../../src/engine/operators/operator';
+import type { SortOrder } from '../../../src/engine/operators/operator';
+import { Operator } from '../../../src/engine/operators/operator';
 
-class ArraySource implements Operator {
+class ArraySource extends Operator {
   private idx = 0;
   constructor(
     private rows: any[],
     private sortOrder?: SortOrder
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     if (this.idx >= this.rows.length) return null;

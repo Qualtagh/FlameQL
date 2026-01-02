@@ -12,45 +12,32 @@ import { Operator, SortOrder } from './operator';
  * Memory: O(M) - Right collection must fit in memory.
  * Requirement: None (supports any operation).
  */
-export class NestedLoopJoinOperator implements Operator {
-  private rightBuffer: any[] = [];
-  private initialized = false;
-  private currentLeftRow: any | null = null;
-  private rightIndex = 0;
+export class NestedLoopJoinOperator extends Operator {
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
     private node: JoinNode,
     private parameters: Record<string, any>
-  ) { }
+  ) {
+    super();
+  }
 
-  async next(): Promise<any | null> {
-    if (!this.initialized) {
-      // Load right source into memory
-      let row;
-      while (row = await this.rightSource.next()) {
-        this.rightBuffer.push(row);
-      }
-      this.initialized = true;
+  async *[Symbol.asyncIterator]() {
+    const rightBuffer: any[] = [];
+
+    // Load right source into memory
+    for await (const row of this.rightSource) {
+      rightBuffer.push(row);
     }
 
-    while (true) {
-      if (!this.currentLeftRow) {
-        this.currentLeftRow = await this.leftSource.next();
-        if (!this.currentLeftRow) return null;
-        this.rightIndex = 0;
-      }
-
-      while (this.rightIndex < this.rightBuffer.length) {
-        const rightRow = this.rightBuffer[this.rightIndex++];
-
-        const combinedRow = { ...this.currentLeftRow, ...rightRow };
+    // Stream left source and join with buffer
+    for await (const leftRow of this.leftSource) {
+      for (const rightRow of rightBuffer) {
+        const combinedRow = { ...leftRow, ...rightRow };
         if (evaluatePredicate(this.node.condition, combinedRow, this.parameters)) {
-          return combinedRow;
+          yield combinedRow;
         }
       }
-
-      this.currentLeftRow = null;
     }
   }
 

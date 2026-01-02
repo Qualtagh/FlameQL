@@ -15,7 +15,7 @@ import { Operator, SortOrder } from './operator';
  * Memory: O(N + M) - Both collections must fit in memory.
  * Requirement: Comparison operations (==, <, <=, >, >=).
  */
-export class MergeJoinOperator implements Operator {
+export class MergeJoinOperator extends Operator {
   private leftBuffer: any[] = [];
   private rightBuffer: any[] = [];
   private initialized = false;
@@ -42,6 +42,7 @@ export class MergeJoinOperator implements Operator {
     private rightSource: Operator,
     node: JoinNode
   ) {
+    super();
     if (!isMergeJoinCompatible(node.condition)) {
       throw new Error(
         `MergeJoin strategy requires comparison operation (==, <, <=, >, >=), got: ${node.condition}`

@@ -32,10 +32,10 @@ export interface PreparedFirestoreCursorOptions {
   includeScanLimitOffset?: boolean;
 }
 
-export class PreparedFirestoreScan implements Operator {
+export class PreparedFirestoreScan extends Operator {
   readonly plan: PreparedFirestoreScanPlan;
 
-  private iterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot> | null = null;
+  private rightIterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot> | null = null;
   private exhausted = false;
 
   private driverField?: string;
@@ -52,6 +52,7 @@ export class PreparedFirestoreScan implements Operator {
     node: ExecutionNode,
     private parameters: Record<string, any>
   ) {
+    super();
     this.plan = prepareFirestoreScanPlan(node);
 
     if (this.plan.driver) {
@@ -85,19 +86,19 @@ export class PreparedFirestoreScan implements Operator {
     // If a driving value is provided, we restart the scan with this value
     if (drivingValue !== undefined) {
       this.startScan(drivingValue);
-    } else if (this.iterator === null && !this.exhausted) {
+    } else if (this.rightIterator === null && !this.exhausted) {
       this.startScan(undefined);
     }
 
-    if (!this.iterator || this.exhausted) {
+    if (!this.rightIterator || this.exhausted) {
       return null;
     }
 
     while (true) {
-      const { value, done } = await this.iterator.next();
+      const { value, done } = await this.rightIterator.next();
       if (done || !value) {
         this.exhausted = true;
-        this.iterator = null;
+        this.rightIterator = null;
         return null;
       }
 
@@ -132,7 +133,7 @@ export class PreparedFirestoreScan implements Operator {
 
     const query = this.buildQuery(finalOpts);
     const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
-    this.iterator = stream[Symbol.asyncIterator]();
+    this.rightIterator = stream[Symbol.asyncIterator]();
     this.exhausted = false;
   }
 

@@ -3,7 +3,7 @@ import { evaluate } from '../evaluator';
 import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { Operator, SortOrder } from './operator';
 
-export class Sort implements Operator {
+export class Sort extends Operator {
   private buffer: any[] | null = null;
   private index = 0;
 
@@ -11,7 +11,7 @@ export class Sort implements Operator {
     private source: Operator,
     private node: SortNode,
     private parameters: Record<string, any>
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     if (!this.buffer) {

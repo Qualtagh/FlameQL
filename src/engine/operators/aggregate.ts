@@ -2,7 +2,7 @@ import { AggregateNode } from '../ast';
 import { getValueFromField } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
-export class Aggregate implements Operator {
+export class Aggregate extends Operator {
   private groups: Map<string, any> = new Map();
   private initialized = false;
   private resultIterator: IterableIterator<any> | null = null;
@@ -10,7 +10,7 @@ export class Aggregate implements Operator {
   constructor(
     private source: Operator,
     private node: AggregateNode
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     if (!this.initialized) {

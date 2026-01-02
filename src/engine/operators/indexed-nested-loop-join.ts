@@ -17,7 +17,7 @@ import { PreparedFirestoreScan } from './prepared-firestore-scan';
  * This implementation delegates all Firestore query construction + doc→row mapping
  * to a prepared scan (`PreparedFirestoreScan`) created from the RIGHT plan node.
  */
-export class IndexedNestedLoopJoinOperator implements Operator {
+export class IndexedNestedLoopJoinOperator extends Operator {
   private readonly rightPrepared: PreparedFirestoreScan;
   private readonly driver: IndexedNestedLoopLookupPlan;
 
@@ -45,6 +45,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     private parameters: Record<string, any>,
     private indexManager?: IndexManager
   ) {
+    super();
     if (!(rightSource instanceof PreparedFirestoreScan)) {
       throw new Error('Indexed nested-loop join requires a PreparedFirestoreScan operator on the right side.');
     }

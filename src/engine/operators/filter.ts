@@ -2,12 +2,12 @@ import { FilterNode } from '../ast';
 import { evaluatePredicate } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
-export class Filter implements Operator {
+export class Filter extends Operator {
   constructor(
     private source: Operator,
     private node: FilterNode,
     private parameters: Record<string, any>
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     let row;

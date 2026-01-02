@@ -1,14 +1,14 @@
 import { LimitNode } from '../ast';
 import { Operator, SortOrder } from './operator';
 
-export class Limit implements Operator {
+export class Limit extends Operator {
   private delivered = 0;
   private skipped = 0;
 
   constructor(
     private source: Operator,
     private node: LimitNode
-  ) { }
+  ) { super(); }
 
   async next(): Promise<any | null> {
     // skip offset rows

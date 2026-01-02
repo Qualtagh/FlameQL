@@ -7,7 +7,7 @@ import { Operator, SortOrder } from './operator';
  *
  * Supports deduplication strategies defined by UnionDistinctStrategy.
  */
-export class Union implements Operator {
+export class Union extends Operator {
   private inputs: Operator[];
   private currentInputIndex: number = 0;
 
@@ -16,6 +16,7 @@ export class Union implements Operator {
   private isDuplicate: (row: any) => boolean;
 
   constructor(inputs: Operator[], strategy: UnionDistinctStrategy = UnionDistinctStrategy.None) {
+    super();
     this.inputs = inputs;
     this.isDuplicate = createUnionDeduplicator(strategy, {
       seenPaths: this.seenPaths,
