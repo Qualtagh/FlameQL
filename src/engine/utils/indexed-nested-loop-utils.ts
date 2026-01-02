@@ -189,3 +189,54 @@ function asField(expr: any): Field | null {
   }
   return null;
 }
+
+export function serializeKey(value: any): string | null {
+  if (value === undefined || value === null) return null;
+  const t = typeof value;
+  switch (t) {
+    case 'string':
+      return `s:${value}`;
+    case 'number':
+      return `n:${value}`;
+    case 'boolean':
+      return `b:${value}`;
+    default:
+      try {
+        return `j:${JSON.stringify(value)}`;
+      } catch {
+        return null;
+      }
+  }
+}
+
+export function chunkArray<T>(values: T[], size: number): T[][] {
+  if (size <= 0) return [values];
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) {
+    out.push(values.slice(i, i + size));
+  }
+  return out;
+}
+
+export function uniqueNonNull(values: any[]): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const v of values) {
+    if (v === undefined || v === null) continue;
+    const key = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+      ? `${typeof v}:${String(v)}`
+      : `j:${safeJson(v)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+
+export function safeJson(v: any): string {
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}

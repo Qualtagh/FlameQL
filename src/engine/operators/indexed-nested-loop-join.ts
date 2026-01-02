@@ -3,7 +3,8 @@ import { ExecutionNode, JoinNode } from '../ast';
 import { evaluate, evaluatePredicate, getValueFromField } from '../evaluator';
 import { IndexManager } from '../indexes/index-manager';
 import { DOC_PATH } from '../symbols';
-import { IndexedNestedLoopLookupPlan, pickIndexedNestedLoopLookupPlan } from '../utils/indexed-nested-loop-utils';
+import { chunkArray, IndexedNestedLoopLookupPlan, pickIndexedNestedLoopLookupPlan, serializeKey, uniqueNonNull } from '../utils/indexed-nested-loop-utils';
+import { maxPerOperation } from '../utils/predicate-utils';
 import { Operator, SortOrder } from './operator';
 import { PreparedFirestoreScan } from './prepared-firestore-scan';
 
@@ -16,11 +17,6 @@ import { PreparedFirestoreScan } from './prepared-firestore-scan';
  * to a prepared scan (`PreparedFirestoreScan`) created from the RIGHT plan node.
  */
 export class IndexedNestedLoopJoinOperator implements Operator {
-  /**
-   * Firestore allows at most 10 elements for `in` / `array-contains-any` queries.
-   */
-  private static readonly FIRESTORE_IN_MAX = 10;
-
   private readonly rightPrepared: PreparedFirestoreScan;
   private readonly driver: IndexedNestedLoopLookupPlan;
 
@@ -96,7 +92,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
 
       while (this.leftBatchIndex < this.leftBatch.length) {
         const leftRow = this.leftBatch[this.leftBatchIndex++];
-        const key = this.serializeKey(evaluate(this.driver.leftExpr, leftRow, this.parameters));
+        const key = serializeKey(evaluate(this.driver.leftExpr, leftRow, this.parameters));
         const matches = key ? this.rightMatchesByKey.get(key) ?? [] : [];
         if (matches.length === 0) continue;
 
@@ -130,7 +126,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       if (!leftRow) return null;
 
       const leftVal = evaluate(this.driver.leftExpr, leftRow, this.parameters);
-      const cacheKey = this.serializeKey(leftVal) ?? `null:${String(leftVal)}`;
+      const cacheKey = serializeKey(leftVal) ?? `null:${String(leftVal)}`;
 
       let rightRows = this.perRowCache.get(cacheKey);
       if (!rightRows) {
@@ -152,12 +148,12 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     this.requestedKeySet = new Set();
     this.rightMatchesByKey = new Map();
 
-    const max = IndexedNestedLoopJoinOperator.FIRESTORE_IN_MAX;
+    const max = maxPerOperation(this.driver.lookupOp);
     const values: any[] = [];
 
     const pushLeftRow = (row: any, joinValue: any) => {
       this.leftBatch.push(row);
-      const key = this.serializeKey(joinValue);
+      const key = serializeKey(joinValue);
       if (!key) return;
       if (!this.requestedKeySet.has(key)) {
         this.requestedKeySet.add(key);
@@ -178,7 +174,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       if (!row) break;
 
       const v = evaluate(this.driver.leftExpr, row, this.parameters);
-      const key = this.serializeKey(v);
+      const key = serializeKey(v);
 
       // Null/undefined values can't be used reliably for index lookups; still keep the row (it will just produce no matches).
       if (!key) {
@@ -222,7 +218,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
   private indexRightRow(rightRow: any) {
     if (this.driver.lookupOp === 'in') {
       const v = getValueFromField(rightRow, this.driver.rightField);
-      const key = this.serializeKey(v);
+      const key = serializeKey(v);
       if (!key) return;
       if (!this.requestedKeySet.has(key)) return;
       const arr = this.rightMatchesByKey.get(key) ?? [];
@@ -235,7 +231,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
     const arrVal = getValueFromField(rightRow, this.driver.rightField);
     if (!Array.isArray(arrVal)) return;
     for (const element of arrVal) {
-      const key = this.serializeKey(element);
+      const key = serializeKey(element);
       if (!key) continue;
       if (!this.requestedKeySet.has(key)) continue;
       const bucket = this.rightMatchesByKey.get(key) ?? [];
@@ -247,6 +243,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
   private async fetchRightForPerRow(leftVal: any): Promise<any[]> {
     const fieldPath = this.driver.rightField.path.join('.');
     const op = this.driver.lookupOp;
+    const max = maxPerOperation(op);
 
     // Ops that require an ARRAY constant.
     if (op === 'in' || op === 'array-contains-any' || op === 'not-in') {
@@ -258,7 +255,7 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       const seen = new Set<string>();
       const out: any[] = [];
 
-      for (const chunk of chunkArray(unique, IndexedNestedLoopJoinOperator.FIRESTORE_IN_MAX)) {
+      for (const chunk of chunkArray(unique, max)) {
         const cursor = this.rightPrepared.createCursor({
           includeBaseWhere: true,
           includeScanOrderBy: false,
@@ -300,56 +297,5 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       out.push(row);
     }
     return out;
-  }
-
-  private serializeKey(value: any): string | null {
-    if (value === undefined || value === null) return null;
-    const t = typeof value;
-    switch (t) {
-      case 'string':
-        return `s:${value}`;
-      case 'number':
-        return `n:${value}`;
-      case 'boolean':
-        return `b:${value}`;
-      default:
-        try {
-          return `j:${JSON.stringify(value)}`;
-        } catch {
-          return null;
-        }
-    }
-  }
-}
-
-function chunkArray<T>(values: T[], size: number): T[][] {
-  if (size <= 0) return [values];
-  const out: T[][] = [];
-  for (let i = 0; i < values.length; i += size) {
-    out.push(values.slice(i, i + size));
-  }
-  return out;
-}
-
-function uniqueNonNull(values: any[]): any[] {
-  const seen = new Set<string>();
-  const out: any[] = [];
-  for (const v of values) {
-    if (v === undefined || v === null) continue;
-    const key = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
-      ? `${typeof v}:${String(v)}`
-      : `j:${safeJson(v)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(v);
-  }
-  return out;
-}
-
-function safeJson(v: any): string {
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
   }
 }

@@ -7,6 +7,19 @@ const IN_LIST_MAX = 30;
 const NOT_IN_LIST_MAX = 30;
 const ARRAY_CONTAINS_ANY_MAX = 10;
 
+export function maxPerOperation(operation: WhereFilterOp): number {
+  switch (operation) {
+    case 'in':
+      return IN_LIST_MAX;
+    case 'not-in':
+      return NOT_IN_LIST_MAX;
+    case 'array-contains-any':
+      return ARRAY_CONTAINS_ANY_MAX;
+    default:
+      throw new Error(`Unsupported operation: ${operation}`);
+  }
+}
+
 /**
  * Simplifies a predicate by applying logical rules:
  * - Single element lists → replace with element
