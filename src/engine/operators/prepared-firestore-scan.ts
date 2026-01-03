@@ -32,7 +32,7 @@ export interface PreparedFirestoreCursorOptions {
   includeScanLimitOffset?: boolean;
 }
 
-export class PreparedFirestoreScan extends Operator {
+export class PreparedFirestoreScan implements Operator {
   readonly plan: PreparedFirestoreScanPlan;
 
   private driverField?: string;
@@ -49,7 +49,6 @@ export class PreparedFirestoreScan extends Operator {
     node: ExecutionNode,
     private parameters: Record<string, any>
   ) {
-    super();
     this.plan = prepareFirestoreScanPlan(node);
 
     if (this.plan.driver) {

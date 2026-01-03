@@ -2,11 +2,11 @@ import { AggregateNode } from '../ast';
 import { getValueFromField } from '../evaluator';
 import { Operator, SortOrder } from './operator';
 
-export class Aggregate extends Operator {
+export class Aggregate implements Operator {
   constructor(
     private source: Operator,
     private node: AggregateNode
-  ) { super(); }
+  ) { }
 
   async *[Symbol.asyncIterator]() {
     const groups = new Map<string, any>();

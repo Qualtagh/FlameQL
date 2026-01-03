@@ -4,16 +4,16 @@ import { MergeJoinOperator } from '../../../src/engine/operators/merge-join';
 import type { SortOrder } from '../../../src/engine/operators/operator';
 import { Operator } from '../../../src/engine/operators/operator';
 
-class ArraySource extends Operator {
-  private idx = 0;
+class ArraySource implements Operator {
   constructor(
     private rows: any[],
     private sortOrder?: SortOrder
-  ) { super(); }
+  ) { }
 
-  async next(): Promise<any | null> {
-    if (this.idx >= this.rows.length) return null;
-    return this.rows[this.idx++];
+  async *[Symbol.asyncIterator]() {
+    for (const row of this.rows) {
+      yield row;
+    }
   }
 
   getSortOrder(): SortOrder | undefined {
@@ -47,8 +47,8 @@ describe('MergeJoinOperator (sorting behavior)', () => {
 
     const op = new MergeJoinOperator(left, right, joinNode);
     const out: any[] = [];
-    let row;
-    while (row = await op.next()) {
+
+    for await (const row of op) {
       out.push(row);
     }
 
@@ -94,8 +94,8 @@ describe('MergeJoinOperator (sorting behavior)', () => {
 
     const op = new MergeJoinOperator(left, right, joinNode);
     const out: any[] = [];
-    let row;
-    while (row = await op.next()) {
+
+    for await (const row of op) {
       out.push(row);
     }
 

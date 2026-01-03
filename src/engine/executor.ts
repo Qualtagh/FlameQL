@@ -12,11 +12,7 @@ export class Executor {
   ) { }
 
   async *execute(plan: ExecutionNode, parameters: Record<string, any>): AsyncGenerator<any, void, unknown> {
-    const rootOperator = this.buildOperatorTree(plan, parameters);
-    let row;
-    while (row = await rootOperator.next()) {
-      yield row;
-    }
+    yield* this.buildOperatorTree(plan, parameters);
   }
 
   async executeAll(plan: ExecutionNode, parameters: Record<string, any>): Promise<any[]> {

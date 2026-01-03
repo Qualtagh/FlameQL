@@ -1,11 +1,11 @@
 import { LimitNode } from '../ast';
 import { Operator, SortOrder } from './operator';
 
-export class Limit extends Operator {
+export class Limit implements Operator {
   constructor(
     private source: Operator,
     private node: LimitNode
-  ) { super(); }
+  ) { }
 
   async *[Symbol.asyncIterator]() {
     let skipped = 0;

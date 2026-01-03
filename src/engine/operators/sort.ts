@@ -3,12 +3,12 @@ import { evaluate } from '../evaluator';
 import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { Operator, SortOrder } from './operator';
 
-export class Sort extends Operator {
+export class Sort implements Operator {
   constructor(
     private source: Operator,
     private node: SortNode,
     private parameters: Record<string, any>
-  ) { super(); }
+  ) { }
 
   async *[Symbol.asyncIterator]() {
     const buffer: any[] = [];

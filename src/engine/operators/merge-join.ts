@@ -15,24 +15,7 @@ import { Operator, SortOrder } from './operator';
  * Memory: O(N + M) - Both collections must fit in memory.
  * Requirement: Comparison operations (==, <, <=, >, >=).
  */
-export class MergeJoinOperator extends Operator {
-  private leftBuffer: any[] = [];
-  private rightBuffer: any[] = [];
-  private initialized = false;
-  private leftIndex = 0;
-
-  // Pointers for the sliding window on rightBuffer
-  // idxGe: index of first element where rightValue >= leftValue
-  // idxGt: index of first element where rightValue > leftValue
-  private idxGe = 0;
-  private idxGt = 0;
-  private currentLeftMatches: any[] = [];
-
-  // Range of matching indices in rightBuffer [start, end)
-  private rightMatchStart = 0;
-  private rightMatchEnd = 0;
-  private matchLeftIndex = 0;
-  private matchRightIndex = 0;
+export class MergeJoinOperator implements Operator {
   private leftField: Field;
   private rightField: Field;
   private operation: string;
@@ -42,7 +25,6 @@ export class MergeJoinOperator extends Operator {
     private rightSource: Operator,
     node: JoinNode
   ) {
-    super();
     if (!isMergeJoinCompatible(node.condition)) {
       throw new Error(
         `MergeJoin strategy requires comparison operation (==, <, <=, >, >=), got: ${node.condition}`
@@ -54,54 +36,25 @@ export class MergeJoinOperator extends Operator {
     this.rightField = this.ensureField(condition.right);
   }
 
-  async next(): Promise<any | null> {
-    if (!this.initialized) {
-      await this.buildSortedBuffers();
-      this.initialized = true;
+  async *[Symbol.asyncIterator]() {
+    const leftBuffer: any[] = [];
+    const rightBuffer: any[] = [];
+
+    // 1. Build buffers
+    for await (const row of this.leftSource) {
+      leftBuffer.push(row);
+    }
+    for await (const row of this.rightSource) {
+      rightBuffer.push(row);
     }
 
-    while (true) {
-      // If we're iterating through current matches, continue
-      if (this.matchLeftIndex < this.currentLeftMatches.length) {
-        if (this.matchRightIndex < this.rightMatchEnd) {
-          const leftRow = this.currentLeftMatches[this.matchLeftIndex];
-          const rightRow = this.rightBuffer[this.matchRightIndex++];
-          return { ...leftRow, ...rightRow };
-        }
-        // Move to next left match and reset right index
-        this.matchLeftIndex++;
-        this.matchRightIndex = this.rightMatchStart;
-        continue;
-      }
-
-      // Find next set of matches
-      if (!this.findNextMatches()) {
-        return null;
-      }
-    }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    // MergeJoin produces output sorted by the join keys (ASC)
-    // We can report it as sorted by the left field
-    return { field: `${this.leftField.source}.${this.leftField.path.join('.')}`, direction: 'asc' };
-  }
-
-  private async buildSortedBuffers() {
-    let row;
-    while (row = await this.leftSource.next()) {
-      this.leftBuffer.push(row);
-    }
-    while (row = await this.rightSource.next()) {
-      this.rightBuffer.push(row);
-    }
-
+    // 2. Sort buffers if needed
     const leftSort = this.leftSource.getSortOrder();
     const expectedLeftField = `${this.leftField.source}.${this.leftField.path.join('.')}`;
     const leftSorted = leftSort && leftSort.field === expectedLeftField && leftSort.direction === 'asc';
 
     if (!leftSorted) {
-      this.leftBuffer.sort((a, b) =>
+      leftBuffer.sort((a, b) =>
         compareValues(
           getValueFromField(a, this.leftField),
           getValueFromField(b, this.leftField)
@@ -114,94 +67,102 @@ export class MergeJoinOperator extends Operator {
     const rightSorted = rightSort && rightSort.field === expectedRightField && rightSort.direction === 'asc';
 
     if (!rightSorted) {
-      this.rightBuffer.sort((a, b) =>
+      rightBuffer.sort((a, b) =>
         compareValues(
           getValueFromField(a, this.rightField),
           getValueFromField(b, this.rightField)
         )
       );
     }
+
+    // 3. Merge Logic
+    let leftIndex = 0;
+
+    // Pointers for the sliding window on rightBuffer
+    let idxGe = 0; // index of first element where rightValue >= leftValue
+    let idxGt = 0; // index of first element where rightValue > leftValue
+
+    while (leftIndex < leftBuffer.length) {
+      const leftValue = getValueFromField(leftBuffer[leftIndex], this.leftField);
+
+      // Collect all left rows with this same value (handle duplicates)
+      const currentLeftMatches: any[] = [];
+      while (
+        leftIndex < leftBuffer.length &&
+        compareValues(getValueFromField(leftBuffer[leftIndex], this.leftField), leftValue) === 0
+      ) {
+        currentLeftMatches.push(leftBuffer[leftIndex]);
+        leftIndex++;
+      }
+
+      // Update idxGe: find first right element >= leftValue
+      while (idxGe < rightBuffer.length) {
+        const rightValue = getValueFromField(rightBuffer[idxGe], this.rightField);
+        if (compareValues(rightValue, leftValue) >= 0) {
+          break;
+        }
+        idxGe++;
+      }
+
+      // Update idxGt: find first right element > leftValue
+      // Optimization: idxGt must be >= idxGe
+      if (idxGt < idxGe) {
+        idxGt = idxGe;
+      }
+      while (idxGt < rightBuffer.length) {
+        const rightValue = getValueFromField(rightBuffer[idxGt], this.rightField);
+        if (compareValues(rightValue, leftValue) > 0) {
+          break;
+        }
+        idxGt++;
+      }
+
+      // Determine matching range based on operation
+      let rightMatchStart = 0;
+      let rightMatchEnd = 0;
+
+      switch (this.operation) {
+        case '==':
+          // right == left  => [idxGe, idxGt)
+          rightMatchStart = idxGe;
+          rightMatchEnd = idxGt;
+          break;
+        case '<':
+          // left < right <=> right > left => [idxGt, end)
+          rightMatchStart = idxGt;
+          rightMatchEnd = rightBuffer.length;
+          break;
+        case '<=':
+          // left <= right <=> right >= left => [idxGe, end)
+          rightMatchStart = idxGe;
+          rightMatchEnd = rightBuffer.length;
+          break;
+        case '>':
+          // left > right <=> right < left => [0, idxGe)
+          rightMatchStart = 0;
+          rightMatchEnd = idxGe;
+          break;
+        case '>=':
+          // left >= right <=> right <= left => [0, idxGt)
+          rightMatchStart = 0;
+          rightMatchEnd = idxGt;
+          break;
+      }
+
+      // Yield all combinations
+      for (const leftRow of currentLeftMatches) {
+        for (let r = rightMatchStart; r < rightMatchEnd; r++) {
+          const rightRow = rightBuffer[r];
+          yield { ...leftRow, ...rightRow };
+        }
+      }
+    }
   }
 
-  private findNextMatches(): boolean {
-    this.currentLeftMatches = [];
-    this.matchLeftIndex = 0;
-
-    // Check if we've exhausted the left collection
-    if (this.leftIndex >= this.leftBuffer.length) {
-      return false;
-    }
-
-    const leftValue = getValueFromField(this.leftBuffer[this.leftIndex], this.leftField);
-
-    // Collect all left rows with this same value (handle duplicates)
-    while (
-      this.leftIndex < this.leftBuffer.length &&
-      compareValues(getValueFromField(this.leftBuffer[this.leftIndex], this.leftField), leftValue) === 0
-    ) {
-      this.currentLeftMatches.push(this.leftBuffer[this.leftIndex]);
-      this.leftIndex++;
-    }
-
-    // Update idxGe: find first right element >= leftValue
-    while (this.idxGe < this.rightBuffer.length) {
-      const rightValue = getValueFromField(this.rightBuffer[this.idxGe], this.rightField);
-      if (compareValues(rightValue, leftValue) >= 0) {
-        break;
-      }
-      this.idxGe++;
-    }
-
-    // Update idxGt: find first right element > leftValue
-    // Optimization: idxGt must be >= idxGe
-    if (this.idxGt < this.idxGe) {
-      this.idxGt = this.idxGe;
-    }
-    while (this.idxGt < this.rightBuffer.length) {
-      const rightValue = getValueFromField(this.rightBuffer[this.idxGt], this.rightField);
-      if (compareValues(rightValue, leftValue) > 0) {
-        break;
-      }
-      this.idxGt++;
-    }
-
-    // Determine matching range based on operation
-    switch (this.operation) {
-      case '==':
-        // right == left  => [idxGe, idxGt)
-        this.rightMatchStart = this.idxGe;
-        this.rightMatchEnd = this.idxGt;
-        break;
-      case '<':
-        // left < right <=> right > left => [idxGt, end)
-        this.rightMatchStart = this.idxGt;
-        this.rightMatchEnd = this.rightBuffer.length;
-        break;
-      case '<=':
-        // left <= right <=> right >= left => [idxGe, end)
-        this.rightMatchStart = this.idxGe;
-        this.rightMatchEnd = this.rightBuffer.length;
-        break;
-      case '>':
-        // left > right <=> right < left => [0, idxGe)
-        this.rightMatchStart = 0;
-        this.rightMatchEnd = this.idxGe;
-        break;
-      case '>=':
-        // left >= right <=> right <= left => [0, idxGt)
-        this.rightMatchStart = 0;
-        this.rightMatchEnd = this.idxGt;
-        break;
-    }
-
-    this.matchRightIndex = this.rightMatchStart;
-
-    // If no matches found in right buffer, try next left group immediately
-    if (this.rightMatchStart >= this.rightMatchEnd) {
-      return this.findNextMatches();
-    }
-
-    return true;
+  getSortOrder(): SortOrder | undefined {
+    // MergeJoin produces output sorted by the join keys (ASC)
+    // We can report it as sorted by the left field
+    return { field: `${this.leftField.source}.${this.leftField.path.join('.')}`, direction: 'asc' };
   }
 
   private ensureField(expr: any): Field {

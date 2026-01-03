@@ -16,7 +16,7 @@ import { Operator, SortOrder } from './operator';
  * Memory: O(M) - Right collection must fit in memory.
  * Requirement: Hash-compatible operations (==, in, array-contains, array-contains-any).
  */
-export class HashJoinOperator extends Operator {
+export class HashJoinOperator implements Operator {
   private leftField: Field;
   private rightField: Field;
   private operation: WhereFilterOp;
@@ -26,7 +26,6 @@ export class HashJoinOperator extends Operator {
     private rightSource: Operator,
     node: JoinNode
   ) {
-    super();
     if (!isHashJoinCompatible(node.condition)) {
       throw new Error(
         `HashJoin strategy requires hash-compatible operation (==, in, array-contains, array-contains-any), got: ${node.condition}`

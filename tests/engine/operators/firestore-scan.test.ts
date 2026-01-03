@@ -20,7 +20,7 @@ describe('FirestoreScan with metadata', () => {
     } as ScanNode;
 
     const scan = new FirestoreScan(db, scanNode, {});
-    const result = await scan.next();
+    const result = (await scan[Symbol.asyncIterator]().next()).value;
 
     expect(result).toBeDefined();
     expect(result.u).toBeDefined();
@@ -44,7 +44,7 @@ describe('FirestoreScan with metadata', () => {
     } as ScanNode;
 
     const scan = new FirestoreScan(db, scanNode, {});
-    const result = await scan.next();
+    const result = (await scan[Symbol.asyncIterator]().next()).value;
 
     expect(result).toBeDefined();
     expect(result.o).toBeDefined();

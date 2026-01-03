@@ -3,7 +3,7 @@ import { ScanNode } from '../ast';
 import { Operator, SortOrder } from './operator';
 import { PreparedFirestoreScan } from './prepared-firestore-scan';
 
-export class FirestoreScan extends Operator {
+export class FirestoreScan implements Operator {
   private prepared: PreparedFirestoreScan;
 
   constructor(
@@ -11,7 +11,6 @@ export class FirestoreScan extends Operator {
     private node: ScanNode,
     private parameters: Record<string, any>
   ) {
-    super();
     this.prepared = new PreparedFirestoreScan(db, node, parameters);
     this.prepared.setOptions({
       includeScanOrderBy: true,

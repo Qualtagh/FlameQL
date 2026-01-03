@@ -12,15 +12,13 @@ import { Operator, SortOrder } from './operator';
  * Memory: O(M) - Right collection must fit in memory.
  * Requirement: None (supports any operation).
  */
-export class NestedLoopJoinOperator extends Operator {
+export class NestedLoopJoinOperator implements Operator {
   constructor(
     private leftSource: Operator,
     private rightSource: Operator,
     private node: JoinNode,
     private parameters: Record<string, any>
-  ) {
-    super();
-  }
+  ) { }
 
   async *[Symbol.asyncIterator]() {
     const rightBuffer: any[] = [];
