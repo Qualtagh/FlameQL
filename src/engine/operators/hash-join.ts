@@ -17,11 +17,6 @@ import { Operator, SortOrder } from './operator';
  * Requirement: Hash-compatible operations (==, in, array-contains, array-contains-any).
  */
 export class HashJoinOperator extends Operator {
-  private hashTable: JoinHashTable | null = null;
-  private initialized = false;
-  private currentLeftRow: any | null = null;
-  private currentMatches: any[] | null = null;
-  private matchIndex = 0;
   private leftField: Field;
   private rightField: Field;
   private operation: WhereFilterOp;
@@ -43,33 +38,25 @@ export class HashJoinOperator extends Operator {
     this.rightField = this.ensureField(condition.right);
   }
 
-  async next(): Promise<any | null> {
-    if (!this.initialized) {
-      await this.buildHashTable();
-      this.initialized = true;
-    }
+  async *[Symbol.asyncIterator]() {
+    const hashTable = new JoinHashTable(this.operation);
 
-    while (true) {
-      if (this.currentMatches && this.matchIndex < this.currentMatches.length) {
-        const rightRow = this.currentMatches[this.matchIndex++];
-        return { ...this.currentLeftRow, ...rightRow };
-      }
-
-      this.currentLeftRow = await this.leftSource.next();
-      if (!this.currentLeftRow) return null;
-
-      const leftValue = getValueFromField(this.currentLeftRow, this.leftField);
-      this.currentMatches = this.hashTable!.get(leftValue);
-      this.matchIndex = 0;
-    }
-  }
-
-  private async buildHashTable() {
-    this.hashTable = new JoinHashTable(this.operation);
-    let row;
-    while (row = await this.rightSource.next()) {
+    // Build hash table
+    for await (const row of this.rightSource) {
       const val = getValueFromField(row, this.rightField);
-      this.hashTable.add(val, row);
+      hashTable.add(val, row);
+    }
+
+    // Probe hash table
+    for await (const leftRow of this.leftSource) {
+      const leftValue = getValueFromField(leftRow, this.leftField);
+      const matches = hashTable.get(leftValue);
+
+      if (!matches) continue;
+
+      for (const rightRow of matches) {
+        yield { ...leftRow, ...rightRow };
+      }
     }
   }
 

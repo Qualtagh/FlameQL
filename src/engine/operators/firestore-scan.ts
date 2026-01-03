@@ -19,8 +19,8 @@ export class FirestoreScan extends Operator {
     });
   }
 
-  async next(): Promise<any | null> {
-    return this.prepared.next();
+  async *[Symbol.asyncIterator]() {
+    yield* this.prepared;
   }
 
   getSortOrder(): SortOrder | undefined {

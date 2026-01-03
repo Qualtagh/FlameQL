@@ -38,6 +38,7 @@ export class Executor {
         const hint = joinNode.joinType;
         const left = this.buildOperatorTree(joinNode.left, parameters);
         const right = this.buildOperatorTree(joinNode.right, parameters);
+        // TODO: don't log, instead throw an error unless an explicit hint is provided
         if (joinNode.crossProduct) {
           console.log('FlameQL: executing cross-product join (no predicate provided).');
         }
@@ -49,15 +50,7 @@ export class Executor {
           case JoinStrategy.NestedLoop:
             return new NestedLoopJoinOperator(left, right, joinNode, parameters);
           case JoinStrategy.IndexedNestedLoop:
-            // Indexed nested-loop uses the right PLAN node to execute parameterized scans.
-            return new IndexedNestedLoopJoinOperator(
-              this.db,
-              left,
-              right,
-              joinNode as IndexedNestedLoopJoinNode,
-              parameters,
-              this.indexManager
-            );
+            return new IndexedNestedLoopJoinOperator(left, right, joinNode as IndexedNestedLoopJoinNode, parameters);
           case JoinStrategy.Auto:
             throw new Error('Auto join should have been resolved by the planner');
           default:

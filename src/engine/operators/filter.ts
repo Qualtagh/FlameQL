@@ -9,14 +9,12 @@ export class Filter extends Operator {
     private parameters: Record<string, any>
   ) { super(); }
 
-  async next(): Promise<any | null> {
-    let row;
-    while (row = await this.source.next()) {
+  async *[Symbol.asyncIterator]() {
+    for await (const row of this.source) {
       if (evaluatePredicate(this.node.predicate, row, this.parameters)) {
-        return row;
+        yield row;
       }
     }
-    return null;
   }
 
   getSortOrder(): SortOrder | undefined {

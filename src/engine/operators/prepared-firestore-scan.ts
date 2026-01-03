@@ -35,9 +35,6 @@ export interface PreparedFirestoreCursorOptions {
 export class PreparedFirestoreScan extends Operator {
   readonly plan: PreparedFirestoreScanPlan;
 
-  private rightIterator: AsyncIterator<admin.firestore.QueryDocumentSnapshot> | null = null;
-  private exhausted = false;
-
   private driverField?: string;
   private driverOp?: admin.firestore.WhereFilterOp;
 
@@ -82,36 +79,11 @@ export class PreparedFirestoreScan extends Operator {
     return undefined;
   }
 
-  async next(drivingValue?: any): Promise<any | null> {
-    // If a driving value is provided, we restart the scan with this value
-    if (drivingValue !== undefined) {
-      this.startScan(drivingValue);
-    } else if (this.rightIterator === null && !this.exhausted) {
-      this.startScan(undefined);
-    }
-
-    if (!this.rightIterator || this.exhausted) {
-      return null;
-    }
-
-    while (true) {
-      const { value, done } = await this.rightIterator.next();
-      if (done || !value) {
-        this.exhausted = true;
-        this.rightIterator = null;
-        return null;
-      }
-
-      const row = { [this.plan.scan.alias]: getDocData(value) };
-      if (this.plan.postFilter && !evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
-        continue;
-      }
-
-      return row;
-    }
+  async *[Symbol.asyncIterator](): AsyncIterator<any> {
+    yield* this.run(undefined);
   }
 
-  private startScan(drivingValue: any) {
+  async *run(drivingValue?: any): AsyncIterable<any> {
     const extraWhere: FirestoreWhereConstraint[] = [];
 
     if (this.driverField && this.driverOp) {
@@ -132,12 +104,16 @@ export class PreparedFirestoreScan extends Operator {
     };
 
     const query = this.buildQuery(finalOpts);
-    const stream = query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>;
-    this.rightIterator = stream[Symbol.asyncIterator]();
-    this.exhausted = false;
+
+    for await (const doc of query.stream() as AsyncIterable<admin.firestore.QueryDocumentSnapshot>) {
+      const row = { [this.plan.scan.alias]: getDocData(doc) };
+      if (this.plan.postFilter && !evaluatePredicate(this.plan.postFilter, row, this.parameters)) {
+        continue;
+      }
+      yield row;
+    }
   }
 
-  // Helper to build query (extracted from previous createCursor logic)
   private buildQuery(opts: PreparedFirestoreCursorOptions): admin.firestore.Query {
     const {
       extraWhere = [],

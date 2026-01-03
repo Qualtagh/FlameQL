@@ -2,33 +2,30 @@ import { LimitNode } from '../ast';
 import { Operator, SortOrder } from './operator';
 
 export class Limit extends Operator {
-  private delivered = 0;
-  private skipped = 0;
-
   constructor(
     private source: Operator,
     private node: LimitNode
   ) { super(); }
 
-  async next(): Promise<any | null> {
-    // skip offset rows
-    while (this.skipped < (this.node.offset ?? 0)) {
-      const skipRow = await this.source.next();
-      if (!skipRow) {
-        return null;
+  async *[Symbol.asyncIterator]() {
+    let skipped = 0;
+    let delivered = 0;
+    const limit = this.node.limit;
+    const offset = this.node.offset ?? 0;
+
+    for await (const row of this.source) {
+      if (skipped < offset) {
+        skipped++;
+        continue;
       }
-      this.skipped++;
+
+      if (delivered >= limit) {
+        return;
+      }
+
+      delivered++;
+      yield row;
     }
-
-    if (this.delivered >= this.node.limit) {
-      return null;
-    }
-
-    const row = await this.source.next();
-    if (!row) return null;
-
-    this.delivered++;
-    return row;
   }
 
   getSortOrder(): SortOrder | undefined {

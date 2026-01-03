@@ -9,15 +9,14 @@ export class Project extends Operator {
     private parameters: Record<string, any>
   ) { super(); }
 
-  async next(): Promise<any | null> {
-    const row = await this.source.next();
-    if (!row) return null;
-
-    const result: any = {};
-    for (const [key, expr] of Object.entries(this.node.fields)) {
-      result[key] = evaluate(expr, row, this.parameters);
+  async *[Symbol.asyncIterator]() {
+    for await (const row of this.source) {
+      const result: any = {};
+      for (const [key, expr] of Object.entries(this.node.fields)) {
+        result[key] = evaluate(expr, row, this.parameters);
+      }
+      yield result;
     }
-    return result;
   }
 
   getSortOrder(): SortOrder | undefined {

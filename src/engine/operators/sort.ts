@@ -4,25 +4,32 @@ import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { Operator, SortOrder } from './operator';
 
 export class Sort extends Operator {
-  private buffer: any[] | null = null;
-  private index = 0;
-
   constructor(
     private source: Operator,
     private node: SortNode,
     private parameters: Record<string, any>
   ) { super(); }
 
-  async next(): Promise<any | null> {
-    if (!this.buffer) {
-      await this.loadAndSort();
+  async *[Symbol.asyncIterator]() {
+    const buffer: any[] = [];
+
+    // Load all rows
+    for await (const row of this.source) {
+      buffer.push(row);
     }
 
-    if (this.index < this.buffer!.length) {
-      return this.buffer![this.index++];
-    }
+    // Sort
+    const comparators: SortComparator[] = this.node.orderBy.map(spec => ({
+      getValue: (row: any) => evaluate(spec.field, row, this.parameters),
+      direction: spec.direction,
+    }));
 
-    return null;
+    sortBuffer(buffer, comparators);
+
+    // Yield
+    for (const row of buffer) {
+      yield row;
+    }
   }
 
   getSortOrder(): SortOrder | undefined {
@@ -32,18 +39,4 @@ export class Sort extends Operator {
     return { field: `${primary.field.source}.${primary.field.path.join('.')}`, direction: primary.direction };
   }
 
-  private async loadAndSort() {
-    this.buffer = [];
-    let row;
-    while (row = await this.source.next()) {
-      this.buffer.push(row);
-    }
-
-    const comparators: SortComparator[] = this.node.orderBy.map(spec => ({
-      getValue: (row: any) => evaluate(spec.field, row, this.parameters),
-      direction: spec.direction,
-    }));
-
-    sortBuffer(this.buffer, comparators);
-  }
 }

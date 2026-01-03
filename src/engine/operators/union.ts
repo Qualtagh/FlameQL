@@ -9,39 +9,25 @@ import { Operator, SortOrder } from './operator';
  */
 export class Union extends Operator {
   private inputs: Operator[];
-  private currentInputIndex: number = 0;
-
-  private seenPaths: Set<string> = new Set();
-  private seenRows: Set<string> = new Set();
   private isDuplicate: (row: any) => boolean;
 
   constructor(inputs: Operator[], strategy: UnionDistinctStrategy = UnionDistinctStrategy.None) {
     super();
     this.inputs = inputs;
     this.isDuplicate = createUnionDeduplicator(strategy, {
-      seenPaths: this.seenPaths,
-      seenRows: this.seenRows,
+      seenPaths: new Set(),
+      seenRows: new Set(),
     });
   }
 
-  async next(): Promise<any | null> {
-    while (this.currentInputIndex < this.inputs.length) {
-      const currentInput = this.inputs[this.currentInputIndex];
-      const row = await currentInput.next();
-
-      if (row === null) {
-        // Current input exhausted, move to next
-        this.currentInputIndex++;
-        continue;
+  async *[Symbol.asyncIterator]() {
+    for (const input of this.inputs) {
+      for await (const row of input) {
+        if (!this.isDuplicate(row)) {
+          yield row;
+        }
       }
-
-      if (this.isDuplicate(row)) continue;
-
-      return row;
     }
-
-    // All inputs exhausted
-    return null;
   }
 
   getSortOrder(): SortOrder | undefined {
