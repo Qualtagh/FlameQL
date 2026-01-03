@@ -1,6 +1,6 @@
 import { JoinNode } from '../ast';
 import { evaluatePredicate } from '../evaluator';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 /**
  * NestedLoopJoinOperator
@@ -37,10 +37,5 @@ export class NestedLoopJoinOperator implements Operator {
         }
       }
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    // Nested-loop join preserves the order of the LEFT input stream.
-    return this.leftSource.getSortOrder();
   }
 }

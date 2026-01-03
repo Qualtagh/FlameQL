@@ -1,12 +1,11 @@
 import { and, constant, eq, gte, JoinStrategy, literal, lt, not, or, PredicateMode, PredicateOrMode } from '../api/api';
 import { Collection, CustomPredicate, Expression, ExpressionInput, Field, FunctionExpression, Literal, OrderBySpec, Param, Predicate, Projection } from '../api/expression';
 import { Constraint, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, traverseExecutionNode, UnionDistinctStrategy, UnionNode } from './ast';
-import { IndexManager } from './indexes/index-manager';
-import { SortOrder } from './operators/operator';
+import { IndexManager, SortOrder } from './indexes/index-manager';
 import { PredicateSplitter } from './predicate-splitter';
 import { IndexedNestedLoopLookupPlan, pickIndexedNestedLoopLookupPlan } from './utils/indexed-nested-loop-utils';
 import { invertComparisonOp, isHashJoinCompatible, isMergeJoinCompatible } from './utils/operation-comparator';
-import { orderBySpecsEqual, simplifyPredicate, toDNF } from './utils/predicate-utils';
+import { asField, orderBySpecsEqual, simplifyPredicate, toDNF } from './utils/predicate-utils';
 import { nextLexicographicString } from './utils/string-utils';
 
 export class Planner {
@@ -390,7 +389,7 @@ export class Planner {
     }
 
     if (predicate.type === 'COMPARISON') {
-      const field = this.asField(predicate.left);
+      const field = asField(predicate.left);
       if (!field) return nonIndexable + 1;
 
       // We can push down if the left side is a simple Field and the right side
@@ -475,13 +474,6 @@ export class Planner {
     constraints.length = 0;
     constraints.push(...filtered);
     return removed;
-  }
-
-  private asField(expr: any): Field | null {
-    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
-      return expr as Field;
-    }
-    return null;
   }
 
   private validateFirestoreGuardrails(constraints: Constraint[], orderBy?: OrderBySpec[]) {
@@ -650,8 +642,8 @@ export class Planner {
   private canUseMergeJoinWithoutSorting(condition: Predicate, left: ExecutionNode, right: ExecutionNode): boolean {
     if (condition.type !== 'COMPARISON') return false;
 
-    const leftField = this.asField(condition.left);
-    const rightField = this.asField(condition.right);
+    const leftField = asField(condition.left);
+    const rightField = asField(condition.right);
     if (!leftField || !rightField) return false;
 
     const plannedLeft = this.planEnsureSortedBy(left, leftField, 'asc');
@@ -775,7 +767,7 @@ export class Planner {
         // Merge join outputs rows sorted by the join key (ASC), regardless of input ordering.
         if (join.joinType === JoinStrategy.Merge) {
           if (join.condition.type !== 'COMPARISON') return undefined;
-          const leftField = this.asField(join.condition.left);
+          const leftField = asField(join.condition.left);
           if (!leftField) return undefined;
           return { field: `${leftField.source}.${leftField.path.join('.')}`, direction: 'asc' };
         }
@@ -792,8 +784,8 @@ export class Planner {
     if (predicate.type !== 'COMPARISON') return predicate;
     if (Array.isArray(predicate.left) || Array.isArray(predicate.right)) return predicate;
 
-    const leftField = this.asField(predicate.left);
-    const rightField = this.asField(predicate.right);
+    const leftField = asField(predicate.left);
+    const rightField = asField(predicate.right);
     if (!leftField || !rightField) return predicate;
 
     const leftInLeft = !!leftField.source && leftAliases.has(leftField.source);
@@ -1013,7 +1005,7 @@ export class Planner {
     const input = predicate.input as ExpressionInput;
     if (!Array.isArray(input) || input.length !== 2) return predicate;
     const [leftExpr, patternExpr] = input;
-    const field = this.asField(leftExpr);
+    const field = asField(leftExpr);
     if (!field) return predicate;
     const normalizedPattern = this.normalizeExpression(patternExpr, aliases);
     if (normalizedPattern.kind !== 'Literal') return predicate;
@@ -1122,9 +1114,7 @@ export class Planner {
 
   private hasIndexedNestedLoopPredicate(condition: Predicate): boolean {
     const comparisons = this.collectComparisonPredicates(condition);
-    return comparisons.some(c => {
-      return !!this.asField(c.left) && !!this.asField(c.right);
-    });
+    return comparisons.some(c => !!asField(c.left) && !!asField(c.right));
   }
 
   private resolveIndexedNestedLoopJoin(joinNode: JoinNode, hint: JoinStrategy): void {

@@ -1,8 +1,7 @@
 import { field, literal } from '../../../src/api/api';
 import { Field, Literal } from '../../../src/api/expression';
 import { Constraint } from '../../../src/engine/ast';
-import { IndexManager } from '../../../src/engine/indexes/index-manager';
-import { SortOrder } from '../../../src/engine/operators/operator';
+import { IndexManager, SortOrder } from '../../../src/engine/indexes/index-manager';
 
 const eq = (a: Field, b: Literal): Constraint => ({ field: a, op: '==', value: b });
 const gt = (a: Field, b: Literal): Constraint => ({ field: a, op: '>', value: b });

@@ -3,11 +3,12 @@ import { UnionDistinctStrategy } from '../ast';
 import { evaluatePredicate, getValue } from '../evaluator';
 import { getDocData } from '../utils/firestore-utils';
 import { JoinHashTable } from '../utils/hash-join-utils';
+import { mergeJoin } from '../utils/merge-join-utils';
 import { sortBuffer, SortComparator } from '../utils/sort-utils';
 import { createUnionDeduplicator } from '../utils/union-utils';
 
 // Re-export symbols for use in generated code
-export { evaluatePredicate, getDocData, getValue, JoinHashTable };
+export { evaluatePredicate, getDocData, getValue, JoinHashTable, mergeJoin };
 
 /**
  * Helper for UNION operator with deduplication.

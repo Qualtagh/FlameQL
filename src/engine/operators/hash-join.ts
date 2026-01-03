@@ -4,7 +4,8 @@ import { JoinNode } from '../ast';
 import { getValueFromField } from '../evaluator';
 import { JoinHashTable } from '../utils/hash-join-utils';
 import { isHashJoinCompatible } from '../utils/operation-comparator';
-import { Operator, SortOrder } from './operator';
+import { ensureField } from '../utils/predicate-utils';
+import { Operator } from './operator';
 
 /**
  * HashJoinOperator
@@ -33,8 +34,8 @@ export class HashJoinOperator implements Operator {
     }
     const condition = node.condition as ComparisonPredicate;
     this.operation = condition.operation;
-    this.leftField = this.ensureField(condition.left);
-    this.rightField = this.ensureField(condition.right);
+    this.leftField = ensureField(condition.left);
+    this.rightField = ensureField(condition.right);
   }
 
   async *[Symbol.asyncIterator]() {
@@ -57,17 +58,5 @@ export class HashJoinOperator implements Operator {
         yield { ...leftRow, ...rightRow };
       }
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    // Hash join preserves the order of the LEFT input stream.
-    return this.leftSource.getSortOrder();
-  }
-
-  private ensureField(expr: any): Field {
-    if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
-      return expr as Field;
-    }
-    throw new Error('Hash join requires Field operands.');
   }
 }

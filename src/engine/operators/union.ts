@@ -1,6 +1,6 @@
 import { UnionDistinctStrategy } from '../ast';
 import { createUnionDeduplicator } from '../utils/union-utils';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 /**
  * Union operator that combines results from multiple input operators.
@@ -27,9 +27,5 @@ export class Union implements Operator {
         }
       }
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return undefined;
   }
 }

@@ -1,15 +1,15 @@
 import * as admin from 'firebase-admin';
 import { ScanNode } from '../ast';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 import { PreparedFirestoreScan } from './prepared-firestore-scan';
 
 export class FirestoreScan implements Operator {
   private prepared: PreparedFirestoreScan;
 
   constructor(
-    private db: admin.firestore.Firestore,
-    private node: ScanNode,
-    private parameters: Record<string, any>
+    db: admin.firestore.Firestore,
+    node: ScanNode,
+    parameters: Record<string, any>
   ) {
     this.prepared = new PreparedFirestoreScan(db, node, parameters);
     this.prepared.setOptions({
@@ -20,9 +20,5 @@ export class FirestoreScan implements Operator {
 
   async *[Symbol.asyncIterator]() {
     yield* this.prepared;
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return this.prepared.getSortOrder();
   }
 }

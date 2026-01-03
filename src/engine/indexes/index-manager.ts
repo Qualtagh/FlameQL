@@ -1,6 +1,11 @@
+import { OrderByDirection } from '@google-cloud/firestore';
 import { Constraint } from '../ast';
-import { SortOrder } from '../operators/operator';
 import { Index, IndexField, IndexFieldMode, QueryScope } from './index-definitions';
+
+export interface SortOrder {
+  field: string;
+  direction: OrderByDirection;
+}
 
 export interface FirestoreIndexJson {
   indexes?: Array<{

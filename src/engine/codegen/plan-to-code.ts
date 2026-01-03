@@ -1,5 +1,6 @@
 import { ComparisonPredicate, JoinStrategy } from '../../api/expression';
 import { AggregateNode, ExecutionNode, FilterNode, IndexedNestedLoopJoinNode, JoinNode, LimitNode, NodeType, PreparedScanNode, ProjectNode, ScanNode, SortNode, UnionNode } from '../ast';
+import { getSortOrderFromNode, isSortedBy } from '../utils/merge-join-utils';
 import { maxPerOperation } from '../utils/predicate-utils';
 import { align, indent, toCamelCase } from '../utils/string-utils';
 import { generateExpressionCode, generateExpressionSelector, generatePredicateCode } from './expression-codegen';
@@ -26,7 +27,7 @@ export function planToCode(
   if (includeImports) {
     code += align`
       import { Firestore } from '@google-cloud/firestore';
-      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, batchRows, JoinHashTable } from 'flameql/codegen/runtime';
+      import { getDocData, evaluatePredicate, evaluate, getValue, unionRows, sortRows, batchRows, JoinHashTable, mergeJoin } from 'flameql/codegen/runtime';
 
     `;
   }
@@ -328,21 +329,38 @@ class CodeGenContext {
         }
       `;
     } else if (node.joinType === JoinStrategy.Merge) {
+      const condition = node.condition as ComparisonPredicate;
+
+      if (Array.isArray(condition.left) || Array.isArray(condition.right)) {
+        throw new Error('Merge Join operands cannot be arrays');
+      }
+
+      const leftSelector = generateExpressionSelector(condition.left);
+      const rightSelector = generateExpressionSelector(condition.right);
+
+      const leftSort = getSortOrderFromNode(node.left);
+      const rightSort = getSortOrderFromNode(node.right);
+
+      // TODO: adapt merge join to desc sorting too
+      const sortLeft = !isSortedBy(leftSort, condition.left, 'asc');
+      const sortRight = !isSortedBy(rightSort, condition.right, 'asc');
+
       body = align`
         async function* ${name}() {
-          // WARNING: Join strategy '${node.joinType}' handled as Nested Loop.
-          const rightBuffer: any[] = [];
-          for await (const row of ${rightName}()) {
-            rightBuffer.push(row);
-          }
+          const leftKeySelector = ${leftSelector};
+          const rightKeySelector = ${rightSelector};
 
-          for await (const leftRow of ${leftName}()) {
-            for (const rightRow of rightBuffer) {
-              const row = { ...leftRow, ...rightRow };
-              if (!(${conditionCode})) continue;
-              yield row;
+          yield* mergeJoin(
+            ${leftName}(),
+            ${rightName}(),
+            {
+              leftKey: (row: any) => leftKeySelector(row, params),
+              rightKey: (row: any) => rightKeySelector(row, params),
+              operation: '${condition.operation}',
+              sortLeft: ${sortLeft},
+              sortRight: ${sortRight}
             }
-          }
+          );
         }
       `;
     } else if (node.joinType === JoinStrategy.Auto) {

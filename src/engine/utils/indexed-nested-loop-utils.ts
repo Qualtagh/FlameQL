@@ -4,6 +4,7 @@ import { ComparisonPredicate, Expression, Field, Predicate } from '../../api/exp
 import { ScanNode } from '../ast';
 import { IndexManager } from '../indexes/index-manager';
 import { invertComparisonOp } from './operation-comparator';
+import { asField } from './predicate-utils';
 
 export type IndexedNestedLoopLookupPlan = {
   mode: 'batch' | 'perRow';
@@ -174,13 +175,6 @@ function buildIndexedNestedLoopCandidates(condition: Predicate, rightAlias: stri
   }
 
   return out;
-}
-
-function asField(expr: any): Field | null {
-  if (expr && typeof expr === 'object' && expr.kind === 'Field' && expr.source) {
-    return expr as Field;
-  }
-  return null;
 }
 
 export function serializeKey(value: any): string | null {

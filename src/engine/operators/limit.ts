@@ -1,5 +1,5 @@
 import { LimitNode } from '../ast';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 export class Limit implements Operator {
   constructor(
@@ -26,9 +26,5 @@ export class Limit implements Operator {
       delivered++;
       yield row;
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return this.source.getSortOrder();
   }
 }

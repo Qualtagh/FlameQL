@@ -1,6 +1,6 @@
 import { AggregateNode } from '../ast';
 import { getValueFromField } from '../evaluator';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 export class Aggregate implements Operator {
   constructor(
@@ -34,9 +34,5 @@ export class Aggregate implements Operator {
         return value === undefined || value === null ? '' : String(value);
       })
       .join('_');
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return undefined;
   }
 }

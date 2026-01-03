@@ -1442,8 +1442,14 @@ function isFunctionExpression(expr: Expression): expr is FunctionExpression {
   return expr?.kind === 'FunctionExpression';
 }
 
-function asField(expr: Expression): Field | null {
-  return isFieldExpr(expr) ? expr as Field : null;
+export function asField(expr: ExpressionInput): Field | null {
+  return !Array.isArray(expr) && isFieldExpr(expr) ? expr as Field : null;
+}
+
+export function ensureField(expr: ExpressionInput): Field {
+  const field = asField(expr);
+  if (!field) throw new Error('Field expected');
+  return field;
 }
 
 function isLiteralExpr(expr: Expression): expr is Literal {

@@ -1,6 +1,6 @@
 import { ProjectNode } from '../ast';
 import { evaluate } from '../evaluator';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 export class Project implements Operator {
   constructor(
@@ -17,9 +17,5 @@ export class Project implements Operator {
       }
       yield result;
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return this.source.getSortOrder();
   }
 }

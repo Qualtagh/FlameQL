@@ -4,7 +4,7 @@ import { batchRows } from '../codegen/runtime';
 import { evaluate, evaluatePredicate } from '../evaluator';
 import { IndexedNestedLoopLookupPlan } from '../utils/indexed-nested-loop-utils';
 import { maxPerOperation } from '../utils/predicate-utils';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 import { PreparedFirestoreScan } from './prepared-firestore-scan';
 
 /**
@@ -46,11 +46,6 @@ export class IndexedNestedLoopJoinOperator implements Operator {
       : this.perRowModeGenerator();
 
     yield* generator;
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    // Preserves the order of the LEFT input stream.
-    return this.leftSource.getSortOrder();
   }
 
   private async *batchModeGenerator() {

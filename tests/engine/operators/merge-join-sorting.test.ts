@@ -1,23 +1,17 @@
 import { eq, field, JoinStrategy } from '../../../src/api/api';
-import { JoinNode, NodeType } from '../../../src/engine/ast';
+import { JoinNode, NodeType, ScanNode } from '../../../src/engine/ast';
 import { MergeJoinOperator } from '../../../src/engine/operators/merge-join';
-import type { SortOrder } from '../../../src/engine/operators/operator';
 import { Operator } from '../../../src/engine/operators/operator';
 
 class ArraySource implements Operator {
   constructor(
-    private rows: any[],
-    private sortOrder?: SortOrder
+    private rows: any[]
   ) { }
 
   async *[Symbol.asyncIterator]() {
     for (const row of this.rows) {
       yield row;
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return this.sortOrder;
   }
 }
 
@@ -34,8 +28,8 @@ describe('MergeJoinOperator (sorting behavior)', () => {
 
     const joinNode: JoinNode = {
       type: NodeType.JOIN,
-      left: { type: NodeType.SCAN },
-      right: { type: NodeType.SCAN },
+      left: { type: NodeType.SCAN, alias: 'a' } as ScanNode,
+      right: { type: NodeType.SCAN, alias: 'b' } as ScanNode,
       joinType: JoinStrategy.Merge,
       condition: eq(field('a.k'), field('b.k')),
     };
@@ -66,23 +60,28 @@ describe('MergeJoinOperator (sorting behavior)', () => {
   });
 
   it('does not sort locally when both inputs report being sorted by the join keys (ASC)', async () => {
-    const leftSorted: SortOrder = { field: 'a.k', direction: 'asc' };
-    const rightSorted: SortOrder = { field: 'b.k', direction: 'asc' };
-
     const left = new ArraySource([
       { a: { k: 1, left: 'L1' } },
       { a: { k: 2, left: 'L2' } },
-    ], leftSorted);
+    ]);
 
     const right = new ArraySource([
       { b: { k: 1, right: 'R1' } },
       { b: { k: 2, right: 'R2' } },
-    ], rightSorted);
+    ]);
 
     const joinNode: JoinNode = {
       type: NodeType.JOIN,
-      left: { type: NodeType.SCAN },
-      right: { type: NodeType.SCAN },
+      left: {
+        type: NodeType.SCAN,
+        alias: 'a',
+        orderBy: [{ field: field('a.k'), direction: 'asc' }],
+      } as ScanNode,
+      right: {
+        type: NodeType.SCAN,
+        alias: 'b',
+        orderBy: [{ field: field('b.k'), direction: 'asc' }],
+      } as ScanNode,
       joinType: JoinStrategy.Merge,
       condition: eq(field('a.k'), field('b.k')),
     };

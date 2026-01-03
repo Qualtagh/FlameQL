@@ -3,7 +3,7 @@ import { Expression, Field, Predicate } from '../../api/expression';
 import { Constraint, ExecutionNode, NodeType, PreparedScanNode, ScanNode } from '../ast';
 import { evaluate, evaluatePredicate } from '../evaluator';
 import { buildFirestoreQuery, FirestoreOrderBy, FirestoreWhereConstraint, getDocData } from '../utils/firestore-utils';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 export interface PreparedFirestoreScanPlan {
   scan: ScanNode;
@@ -59,23 +59,6 @@ export class PreparedFirestoreScan implements Operator {
 
   setOptions(opts: Partial<PreparedFirestoreCursorOptions>) {
     this.cursorOpts = { ...this.cursorOpts, ...opts };
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    // Prepared scan generally returns data in the order of the underlying scan,
-    // unless overridden by specific index lookups or explicitly sorted.
-    // For now, assume it preserves the scan's order.
-    const orderBy = this.plan.scan.orderBy;
-    if (orderBy && orderBy.length > 0) {
-      const first = orderBy[0];
-      if (first.field.kind === 'Field') {
-        return {
-          field: (first.field as Field).path.join('.'),
-          direction: first.direction,
-        };
-      }
-    }
-    return undefined;
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<any> {

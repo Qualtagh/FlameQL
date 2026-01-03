@@ -1,6 +1,6 @@
 import { FilterNode } from '../ast';
 import { evaluatePredicate } from '../evaluator';
-import { Operator, SortOrder } from './operator';
+import { Operator } from './operator';
 
 export class Filter implements Operator {
   constructor(
@@ -15,9 +15,5 @@ export class Filter implements Operator {
         yield row;
       }
     }
-  }
-
-  getSortOrder(): SortOrder | undefined {
-    return this.source.getSortOrder();
   }
 }
